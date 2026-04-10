@@ -1,6 +1,7 @@
 {
   "enabledPlugins": {
     "learn-medusa@medusa": true,
-    "medusa-dev@medusa": true
+    "medusa-dev@medusa": true,
+    "frontend-design@claude-plugins-official": true
   }
 }
