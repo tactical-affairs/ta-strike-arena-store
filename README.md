@@ -21,10 +21,16 @@ The storefront connects to this backend using the Medusa JS SDK with a publishab
 ## Prerequisites
 
 - **Node.js** >= 20
-- **PostgreSQL** (database: `ta_strike_arena`)
-- **Redis**
+- **PostgreSQL** — create the database:
+  ```bash
+  createdb ta_strike_arena
+  ```
+- **Redis** — run via Docker:
+  ```bash
+  docker run -d --name redis -p 6379:6379 --restart unless-stopped redis:7-alpine
+  ```
 
-## Setup
+## Development Setup
 
 1. Install dependencies:
 
@@ -56,13 +62,19 @@ The storefront connects to this backend using the Medusa JS SDK with a publishab
    npx medusa db:migrate
    ```
 
-4. Seed demo data (regions, products, shipping, inventory):
+4. Create an admin user:
+
+   ```bash
+   npx medusa user -e admin@strikearena.net -p your-password
+   ```
+
+5. Seed demo data (regions, products, shipping, inventory):
 
    ```bash
    npm run seed
    ```
 
-5. Start the dev server:
+6. Start the dev server:
 
    ```bash
    npm run dev
@@ -70,6 +82,22 @@ The storefront connects to this backend using the Medusa JS SDK with a publishab
 
    - **API**: http://localhost:9000
    - **Admin dashboard**: http://localhost:9000/app (or http://localhost:5173 in dev)
+
+## Production
+
+1. Build the project:
+
+   ```bash
+   npm run build
+   ```
+
+2. Start the production server:
+
+   ```bash
+   npm run start
+   ```
+
+In production, ensure `JWT_SECRET` and `COOKIE_SECRET` are set to strong, unique values (not the defaults). Update `STORE_CORS`, `ADMIN_CORS`, and `AUTH_CORS` to match your deployed domain origins.
 
 ## Scripts
 
