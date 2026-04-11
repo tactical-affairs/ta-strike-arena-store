@@ -83,6 +83,12 @@ medusaIntegrationTestRunner({
 
 The `TEST_TYPE` env var controls which test suite Jest runs (set automatically by the npm scripts).
 
+## Related Projects
+
+This backend serves **ta-strike-arena-website** (Next.js storefront at `../ta-strike-arena-website/`). The storefront calls this backend's `/store/*` API endpoints via the Medusa JS SDK.
+
+Claude Code is configured with `additionalDirectories` in `.claude/settings.local.json` so it can read and edit both projects in the same session.
+
 ## Claude Code Setup
 
 This project uses Medusa agent skills for Claude Code (configured in `.claude/settings.json`). New developers need to register the marketplace once (this is a global, one-time setup):

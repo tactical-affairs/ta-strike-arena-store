@@ -21,24 +21,25 @@ The storefront connects to this backend using the Medusa JS SDK with a publishab
 ## Prerequisites
 
 - **Node.js** >= 20
-- **PostgreSQL** — create the database:
-  ```bash
-  createdb ta_strike_arena
-  ```
-- **Redis** — run via Docker:
-  ```bash
-  docker run -d --name redis -p 6379:6379 --restart unless-stopped redis:7-alpine
-  ```
+- **Docker Desktop** — used to run PostgreSQL and Redis
 
 ## Development Setup
 
-1. Install dependencies:
+1. Start PostgreSQL and Redis:
+
+   ```bash
+   docker compose up -d
+   ```
+
+   This starts Postgres 16 on port **5433** (5432 is often taken) and Redis 7 on port 6379. Data persists across restarts via Docker volumes.
+
+2. Install dependencies:
 
    ```bash
    npm install
    ```
 
-2. Copy the environment template and configure:
+3. Copy the environment template and configure:
 
    ```bash
    cp .env.template .env
@@ -48,7 +49,7 @@ The storefront connects to this backend using the Medusa JS SDK with a publishab
 
    | Variable | Description |
    |----------|-------------|
-   | `DATABASE_URL` | PostgreSQL connection string (e.g. `postgres://user:pass@localhost:5432/ta_strike_arena`) |
+   | `DATABASE_URL` | PostgreSQL connection string (e.g. `postgres://medusa:medusa@localhost:5433/ta_strike_arena`) |
    | `REDIS_URL` | Redis connection string (default: `redis://localhost:6379`) |
    | `STORE_CORS` | Allowed storefront origins (include `http://localhost:8000` for local dev) |
    | `ADMIN_CORS` | Allowed admin dashboard origins |
@@ -56,25 +57,25 @@ The storefront connects to this backend using the Medusa JS SDK with a publishab
    | `JWT_SECRET` | Secret for signing auth tokens |
    | `COOKIE_SECRET` | Secret for signing cookies |
 
-3. Run database migrations:
+4. Run database migrations:
 
    ```bash
    npx medusa db:migrate
    ```
 
-4. Create an admin user:
+5. Create an admin user:
 
    ```bash
    npx medusa user -e admin@strikearena.net -p your-password
    ```
 
-5. Seed demo data (regions, products, shipping, inventory):
+6. Seed demo data (regions, products, shipping, inventory):
 
    ```bash
    npm run seed
    ```
 
-6. Start the dev server:
+7. Start the dev server:
 
    ```bash
    npm run dev
