@@ -82,3 +82,13 @@ medusaIntegrationTestRunner({
 ```
 
 The `TEST_TYPE` env var controls which test suite Jest runs (set automatically by the npm scripts).
+
+## Claude Code Setup
+
+This project uses Medusa agent skills for Claude Code (configured in `.claude/settings.json`). New developers need to register the marketplace once (this is a global, one-time setup):
+
+```
+/plugin marketplace add medusajs/medusa-agent-skills
+```
+
+After that, the project's `enabledPlugins` in `.claude/settings.json` will automatically activate the Medusa skills (modules, API routes, workflows, storefronts, admin customizations).
