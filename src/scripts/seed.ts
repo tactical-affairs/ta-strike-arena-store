@@ -1,3 +1,5 @@
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { CreateInventoryLevelInput, ExecArgs } from "@medusajs/framework/types";
 import {
   ContainerRegistrationKeys,
@@ -27,10 +29,22 @@ import {
 } from "@medusajs/medusa/core-flows";
 import { ApiKey } from "../../.medusa/types/query-entry-points";
 
-// ─── Image URL base ──────────────────────────────────────────
-// Dev: ta-strike-arena-website dev server
-// Production: change to https://strikearena.net
-const IMAGE_BASE = "http://localhost:8000";
+// ─── Image source directory ──────────────────────────────────
+// Product images are read from the marketing-site repo and uploaded
+// via Medusa's File Module (local in dev, S3/R2 in prod).
+// Path is resolved from the Medusa project root (process.cwd()).
+const MARKETING_IMAGES_DIR = path.resolve(
+  process.cwd(),
+  "../ta-strike-arena-website/public/images"
+);
+
+const MIME_BY_EXT: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+};
 
 // ─── Product data ────────────────────────────────────────────
 // Sourced from ta-strike-arena-website/src/data/shop-products.ts
@@ -421,6 +435,28 @@ export default async function seedDemoData({ container }: ExecArgs) {
   const fulfillmentModuleService = container.resolve(Modules.FULFILLMENT);
   const salesChannelModuleService = container.resolve(Modules.SALES_CHANNEL);
   const storeModuleService = container.resolve(Modules.STORE);
+  const fileModuleService = container.resolve(Modules.FILE);
+
+  async function uploadImage(relPath: string): Promise<{ url: string }> {
+    const cleanRel = relPath.replace(/^\/?images\//, "");
+    const fullPath = path.join(MARKETING_IMAGES_DIR, cleanRel);
+    const buffer = await fs.readFile(fullPath);
+    const ext = path.extname(fullPath).toLowerCase();
+    const mimeType = MIME_BY_EXT[ext];
+    if (!mimeType) {
+      throw new Error(`Unsupported image extension: ${ext} (${fullPath})`);
+    }
+    // Flatten the relative path into the filename so images from different
+    // product folders don't collide (many use the same "main.png" basename).
+    const flattenedName = cleanRel.replace(/[\/\\]/g, "__");
+    const result = await fileModuleService.createFiles({
+      filename: flattenedName,
+      mimeType,
+      content: buffer.toString("base64"),
+      access: "public",
+    });
+    return { url: result.url };
+  }
 
   // ── Store setup ──────────────────────────────────────────
 
@@ -722,6 +758,18 @@ export default async function seedDemoData({ container }: ExecArgs) {
 
   // ── Products ─────────────────────────────────────────────
 
+  logger.info(
+    `Uploading product images from ${MARKETING_IMAGES_DIR}...`
+  );
+  const productImagesByHandle = new Map<string, { url: string }[]>();
+  for (const p of PRODUCTS) {
+    const uploaded = await Promise.all(p.images.map(uploadImage));
+    productImagesByHandle.set(p.handle, uploaded);
+  }
+  logger.info(
+    `Uploaded ${Array.from(productImagesByHandle.values()).flat().length} product images.`
+  );
+
   await createProductsWorkflow(container).run({
     input: {
       products: PRODUCTS.map((p) => ({
@@ -733,7 +781,7 @@ export default async function seedDemoData({ container }: ExecArgs) {
         category_ids: [
           categoryResult.find((cat) => cat.name === p.category)!.id,
         ],
-        images: p.images.map((path) => ({ url: `${IMAGE_BASE}${path}` })),
+        images: productImagesByHandle.get(p.handle)!,
         options: [
           {
             title: "Default",

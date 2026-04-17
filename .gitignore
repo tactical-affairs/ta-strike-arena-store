@@ -24,3 +24,6 @@ build
 !.yarn/versions
 
 .medusa
+
+# Local file provider uploads (dev only; prod uses S3/R2)
+static
