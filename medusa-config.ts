@@ -22,6 +22,36 @@ const fileProvider = useS3
       id: "local",
     }
 
+const paymentProviders: Array<Record<string, unknown>> = []
+if (process.env.FLUIDPAY_API_KEY) {
+  paymentProviders.push({
+    resolve: "./src/modules/payment-fluidpay",
+    id: "fluidpay",
+    options: {
+      apiKey: process.env.FLUIDPAY_API_KEY,
+      publicKey: process.env.FLUIDPAY_PUBLIC_KEY,
+      baseUrl:
+        process.env.FLUIDPAY_BASE_URL ?? "https://sandbox.fluidpay.com",
+      captureMode:
+        (process.env.FLUIDPAY_CAPTURE_MODE as "sale" | "authorize") ??
+        "authorize",
+    },
+  })
+}
+
+const modules: Array<Record<string, unknown>> = [
+  {
+    resolve: "@medusajs/medusa/file",
+    options: { providers: [fileProvider] },
+  },
+]
+if (paymentProviders.length > 0) {
+  modules.push({
+    resolve: "@medusajs/medusa/payment",
+    options: { providers: paymentProviders },
+  })
+}
+
 module.exports = defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
@@ -34,12 +64,5 @@ module.exports = defineConfig({
       cookieSecret: process.env.COOKIE_SECRET || "supersecret",
     }
   },
-  modules: [
-    {
-      resolve: "@medusajs/medusa/file",
-      options: {
-        providers: [fileProvider],
-      },
-    },
-  ],
+  modules,
 })
