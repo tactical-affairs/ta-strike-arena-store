@@ -60,6 +60,16 @@ HTTP Request → src/api/*/route.ts
 | `ADMIN_CORS` | Allowed admin frontend origins |
 | `AUTH_CORS` | Allowed auth endpoint origins |
 | `JWT_SECRET` / `COOKIE_SECRET` | Token/cookie signing |
+| `S3_*` (six vars) | Cloudflare R2 / S3 file storage; all six required for prod |
+
+### File storage
+
+`medusa-config.ts` conditionally registers a File Module provider:
+
+- **`S3_ACCESS_KEY_ID` unset (dev)** → `@medusajs/medusa/file-local`, writes uploads to `./static/` (gitignored). Files served publicly at `http://localhost:9000/static/<filename>`.
+- **`S3_ACCESS_KEY_ID` set (prod)** → `@medusajs/medusa/file-s3`, uploads to the R2 bucket specified in `S3_BUCKET`. Used for Admin UI uploads and the seed script's product images.
+
+The seed script (`src/scripts/seed.ts`) reads product images from the sibling repo at `../ta-strike-arena-website/public/images/` and uploads each file through the File Module so `product.images[].url` points at wherever the provider stored it. Image filenames are flattened (e.g. `strike-arena-target__front.png`) to avoid collisions across product folders. All uploads use `access: "public"`.
 
 ### Build Output
 
@@ -87,7 +97,64 @@ The `TEST_TYPE` env var controls which test suite Jest runs (set automatically b
 
 This backend serves **ta-strike-arena-website** (Next.js storefront at `../ta-strike-arena-website/`). The storefront calls this backend's `/store/*` API endpoints via the Medusa JS SDK.
 
+The storefront auto-generates `medusa-images.generated.ts` and `medusa-variants.ts` from this backend's `/store/products` response on every build (via its `scripts/sync-medusa-images.mjs` prebuild hook). Never hand-edit those files in the storefront repo.
+
 Claude Code is configured with `additionalDirectories` in `.claude/settings.local.json` so it can read and edit both projects in the same session.
+
+## Production Setup
+
+First-time promotion from dev to production:
+
+1. **Cloudflare R2**
+   - Create a bucket (e.g. `ta-strike-arena-images`), enable public access.
+   - Create an API token scoped to that bucket with Object Read + Write.
+   - Note the S3 endpoint (`https://<account-id>.r2.cloudflarestorage.com`) and public URL (`https://pub-<hash>.r2.dev` or a custom domain).
+
+2. **Railway env vars**
+
+   | Variable | Value |
+   |----------|-------|
+   | `S3_FILE_URL` | R2 public URL (where images are served from) |
+   | `S3_ACCESS_KEY_ID` | R2 API token Access Key ID |
+   | `S3_SECRET_ACCESS_KEY` | R2 API token Secret Access Key |
+   | `S3_REGION` | `auto` |
+   | `S3_BUCKET` | `ta-strike-arena-images` |
+   | `S3_ENDPOINT` | R2 endpoint URL |
+
+3. **Initial seed (run once)**
+
+   From a local shell with prod env vars exported (via `railway run` or a `.env.production` file):
+   ```bash
+   NODE_ENV=production npx medusa db:setup --db <prod-db-name>
+   NODE_ENV=production npm run seed
+   NODE_ENV=production npx medusa user -e <email> -p <password>
+   ```
+
+   The seed uploads all 70+ product images from `../ta-strike-arena-website/public/images/` to R2 and creates products in the prod Postgres with R2 URLs.
+
+4. **Wire up the frontend** — see `ta-strike-arena-website/CLAUDE.md#production-setup-first-time`.
+
+### Post-launch changes
+
+After the initial seed, `seed.ts` becomes dev-only. Never run it against prod — duplicate handles would fail the workflow.
+
+- **Content edits** (prices, descriptions, image swaps) → Medusa Admin UI. Uploads route to R2 automatically.
+- **New products / structural changes** → write a one-off script in `src/scripts/` and run with `NODE_ENV=production medusa exec ./src/scripts/<name>.ts`. Commit the script.
+- **Schema changes** → `medusa db:migrate` on deploy.
+
+### Local dev: full reset
+
+To reset local dev and reseed from scratch (ULID variant IDs will change, so the storefront will need `npm run sync-images` after):
+
+```bash
+docker exec ta-strike-arena-postgres psql -U medusa -d postgres \
+  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='ta_strike_arena' AND pid <> pg_backend_pid();" \
+  -c "DROP DATABASE ta_strike_arena;"
+rm -rf static
+npx medusa db:setup --db ta_strike_arena
+npm run seed
+npx medusa user -e admin@example.com -p <password>
+```
 
 ## Claude Code Setup
 
