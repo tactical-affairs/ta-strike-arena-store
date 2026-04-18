@@ -71,6 +71,26 @@ HTTP Request → src/api/*/route.ts
 
 The seed script (`src/scripts/seed.ts`) reads product images from the sibling repo at `../ta-strike-arena-website/public/images/` and uploads each file through the File Module so `product.images[].url` points at wherever the provider stored it. Image filenames are flattened (e.g. `strike-arena-target__front.png`) to avoid collisions across product folders. All uploads use `access: "public"`.
 
+### Payment providers
+
+`medusa-config.ts` registers the Payment Module conditionally, based on env vars:
+
+- **FluidPay** — custom provider in `src/modules/payment-fluidpay/`. Registered **only when `FLUIDPAY_API_KEY` is set**. Token-based flow: storefront uses the FluidPay Tokenizer iframe (with the public key) to exchange card data for a `tok_...`, storefront updates the Medusa payment session with that token, `authorizePayment()` posts to `/api/transaction` with the secret key. See `src/modules/payment-fluidpay/README.md` for the full method-by-method status and remaining TODOs (webhooks, status mapping verification, storefront wiring).
+- **Authorize.net** — handled outside Medusa for now. The storefront at `ta-strike-arena-website/src/app/checkout/` uses Accept.js directly. No Medusa provider module is registered. Once FluidPay takes over, this path can be removed.
+
+Provider activation env vars (see `.env.template`):
+
+| Variable | Purpose |
+|----------|---------|
+| `FLUIDPAY_API_KEY` | Secret key (`api_...`) — server-side only; presence toggles the module on |
+| `FLUIDPAY_PUBLIC_KEY` | Public key (`pub_...`) — passed through to the storefront via the payment session's `data.publicKey` |
+| `FLUIDPAY_BASE_URL` | `https://sandbox.fluidpay.com` (dev) or `https://app.fluidpay.com` (prod) |
+| `FLUIDPAY_CAPTURE_MODE` | `authorize` (default; capture later from admin) or `sale` (capture immediately) |
+
+**Dev activation**: add `FLUIDPAY_*` vars to `.env` pointing at FluidPay sandbox. Restart Medusa. In the Admin UI → Settings → Regions, enable the `pp_fluidpay_fluidpay` provider for the relevant region.
+
+**Prod activation**: add the same vars on Railway (with the prod FluidPay keys and `FLUIDPAY_BASE_URL=https://app.fluidpay.com`). Redeploy. Enable the provider in the prod region. Remove Authorize.net configuration from the storefront checkout flow as part of the switchover.
+
 ### Build Output
 
 TypeScript compiles to `.medusa/server/` (git-ignored). The admin dashboard compiles to `.medusa/admin/`. Do not edit files in `.medusa/`.
