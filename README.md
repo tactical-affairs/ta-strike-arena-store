@@ -57,10 +57,17 @@ The storefront connects to this backend using the Medusa JS SDK with a publishab
    | `JWT_SECRET` | Secret for signing auth tokens |
    | `COOKIE_SECRET` | Secret for signing cookies |
 
-4. Run database migrations:
+   Optional providers (unset → feature disabled):
+
+   | Variable | Description |
+   |----------|-------------|
+   | `S3_ACCESS_KEY_ID` + five other `S3_*` vars | Switches file uploads from `./static/` (local) to Cloudflare R2 / S3. Required for production. |
+   | `FLUIDPAY_API_KEY`, `FLUIDPAY_PUBLIC_KEY`, `FLUIDPAY_BASE_URL`, `FLUIDPAY_CAPTURE_MODE` | Enables the FluidPay payment provider. See `src/modules/payment-fluidpay/README.md`. |
+
+4. Create the database and run migrations (first time only):
 
    ```bash
-   npx medusa db:migrate
+   npx medusa db:setup --db ta_strike_arena
    ```
 
 5. Create an admin user:
@@ -86,19 +93,16 @@ The storefront connects to this backend using the Medusa JS SDK with a publishab
 
 ## Production
 
-1. Build the project:
+Deployed to Railway. For the **first-time** promotion (R2 bucket setup, running the seed against the prod DB, creating the admin user, switching the storefront to point at prod) see the full sequence in [`CLAUDE.md`](CLAUDE.md#production-setup) — that doc stays authoritative so this README doesn't duplicate moving details.
 
-   ```bash
-   npm run build
-   ```
+Quick checklist:
 
-2. Start the production server:
-
-   ```bash
-   npm run start
-   ```
-
-In production, ensure `JWT_SECRET` and `COOKIE_SECRET` are set to strong, unique values (not the defaults). Update `STORE_CORS`, `ADMIN_CORS`, and `AUTH_CORS` to match your deployed domain origins.
+1. Build (`npm run build`) and start (`npm run start`) are the deploy commands; Railway runs both automatically.
+2. Set `JWT_SECRET` and `COOKIE_SECRET` to strong, unique values.
+3. Set `STORE_CORS`, `ADMIN_CORS`, `AUTH_CORS` to the production domains.
+4. Set all six `S3_*` env vars to switch uploads to Cloudflare R2.
+5. Optionally set `FLUIDPAY_*` vars to enable the FluidPay payment provider.
+6. Run `npx medusa db:setup` + `npm run seed` once (from a local shell with prod env loaded) to populate the catalog. After that, evolve the catalog via the Admin UI or one-off `medusa exec` scripts — **never** re-run `npm run seed` against prod.
 
 ## Scripts
 
@@ -123,14 +127,31 @@ The storefront persists the cart ID in `localStorage` under key `sa_cart_id`.
 
 ## Seed Data
 
-The seed script (`src/scripts/seed.ts`) creates:
+The seed script (`src/scripts/seed.ts`) creates the Strike Arena catalog:
 
-- **1 region**: Europe (GB, DE, DK, SE, FR, ES, IT) with EUR (default) + USD currencies
-- **1 stock location**: European Warehouse (Copenhagen)
-- **Shipping**: Standard (2-3 days) and Express (24 hours), flat rate
-- **4 categories**: Shirts, Sweatshirts, Pants, Merch
-- **4 products** with size variants (S/M/L/XL), published to the default sales channel
+- **1 region**: USA (USD)
+- **1 stock location**
+- **Shipping options**: flat-rate
+- **6 product categories**: Targets, Packages, Laser Attachments, Training Handguns, Training Rifles, Training Kits
+- **~28 products** (targets, console, packages, laser attachments, training handguns, training rifles, bundles)
+- **Product images** — reads from `../ta-strike-arena-website/public/images/` and uploads each file through the File Module. Lands in `./static/` with the local provider (dev) or Cloudflare R2 (when `S3_*` env vars are set)
 - **Publishable API key** linked to the default sales channel
+
+Images are flattened and namespaced (`strike-arena-target__front.png`) to avoid collisions across product folders, and uploaded with `access: "public"`.
+
+## File storage
+
+`medusa-config.ts` conditionally picks a file provider based on env:
+
+- **`S3_ACCESS_KEY_ID` unset** → `@medusajs/medusa/file-local`, writes to `./static/` (gitignored). Files served at `http://localhost:9000/static/<filename>`.
+- **`S3_ACCESS_KEY_ID` set** → `@medusajs/medusa/file-s3`. Production uses Cloudflare R2.
+
+Set `S3_*` vars on Railway (prod) to swap providers — see `CLAUDE.md` for the full prod setup sequence.
+
+## Payment providers
+
+- **FluidPay** — custom module in `src/modules/payment-fluidpay/`. Registered only when `FLUIDPAY_API_KEY` is set. See the module's [README](src/modules/payment-fluidpay/README.md) for the integration checklist.
+- **Authorize.net** — historically handled outside Medusa (Accept.js on the storefront). Being replaced by FluidPay.
 
 ## Project Structure
 
