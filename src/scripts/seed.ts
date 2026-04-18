@@ -48,7 +48,14 @@ const MIME_BY_EXT: Record<string, string> = {
 
 // ─── Product data ────────────────────────────────────────────
 // Sourced from ta-strike-arena-website/src/data/shop-products.ts
-// Prices in cents (USD)
+// Prices in cents (USD).
+//
+// ⚠️  BEFORE PRODUCTION SEED: every non-bundle product has a stockQuantity
+// value tuned for dev testing (bundle math visible, nothing runs out
+// instantly). Replace each `stockQuantity:` with the real starting
+// inventory before running this against a prod database. Bundles inherit
+// availability from components, so only the 15 non-bundle numbers matter.
+// See each `// TODO: replace with real prod starting inventory` marker.
 
 type SeedProduct = {
   title: string;
@@ -83,7 +90,7 @@ const PRODUCTS: SeedProduct[] = [
     sku: "SA.003.01",
     price: 12500,
     images: ["/images/strike-arena-target/strike-arena-target-front-yellow.jpg"],
-    stockQuantity: 60,
+    stockQuantity: 60, // TODO: replace with real prod starting inventory
   },
   {
     title: "Pro Target",
@@ -100,7 +107,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/pro-target/pro-target-side-view.jpg",
       "/images/pro-target/pro-target-read-view.jpg",
     ],
-    stockQuantity: 30,
+    stockQuantity: 30, // TODO: replace with real prod starting inventory
   },
   {
     title: "Training Console",
@@ -115,7 +122,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/training-console/top.png",
       "/images/training-console/ports.png",
     ],
-    stockQuantity: 15,
+    stockQuantity: 15, // TODO: replace with real prod starting inventory
   },
 
   // ─── Packages ──────────────────────────────────────────────
@@ -199,7 +206,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-spider-kit/laser.png",
       "/images/la-spider-kit/kit.png",
     ],
-    stockQuantity: 25,
+    stockQuantity: 25, // TODO: replace with real prod starting inventory
   },
   {
     title: "Laser Ammo Flash Kit",
@@ -215,7 +222,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-flash-kit/laser.png",
       "/images/la-flash-kit/kit.png",
     ],
-    stockQuantity: 20,
+    stockQuantity: 20, // TODO: replace with real prod starting inventory
   },
 
   // ─── Training Handguns ─────────────────────────────────────
@@ -233,7 +240,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/kwa-atp-gt/left-2.png",
       "/images/kwa-atp-gt/right-2.png",
     ],
-    stockQuantity: 15,
+    stockQuantity: 15, // TODO: replace with real prod starting inventory
   },
   {
     title: "KWA ATP-Z Training Pistol",
@@ -249,7 +256,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/kwa-atp-z/left-2.png",
       "/images/kwa-atp-z/right-2.png",
     ],
-    stockQuantity: 15,
+    stockQuantity: 15, // TODO: replace with real prod starting inventory
   },
   {
     title: "Laser Ammo Glock 17 Recoil Training Handgun",
@@ -264,7 +271,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-glock-17/angle.png",
       "/images/la-glock-17/detail.png",
     ],
-    stockQuantity: 10,
+    stockQuantity: 10, // TODO: replace with real prod starting inventory
   },
   {
     title: "Laser Ammo Glock 19 Recoil Training Handgun",
@@ -280,7 +287,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-glock-19/side.png",
       "/images/la-glock-19/detail.png",
     ],
-    stockQuantity: 10,
+    stockQuantity: 10, // TODO: replace with real prod starting inventory
   },
   {
     title: "Laser Ammo Glock 45 Recoil Training Handgun",
@@ -296,7 +303,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-glock-45/side.png",
       "/images/la-glock-45/detail.png",
     ],
-    stockQuantity: 10,
+    stockQuantity: 10, // TODO: replace with real prod starting inventory
   },
   {
     title: "Laser Ammo Sig P320/M17 Recoil Training Handgun",
@@ -312,7 +319,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-sig-m17/side.png",
       "/images/la-sig-m17/detail.png",
     ],
-    stockQuantity: 10,
+    stockQuantity: 10, // TODO: replace with real prod starting inventory
   },
   {
     title: "Laser Ammo Sig P320/M18 Compact Recoil Training Handgun",
@@ -327,7 +334,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-sig-m18/angle.png",
       "/images/la-sig-m18/side.png",
     ],
-    stockQuantity: 10,
+    stockQuantity: 10, // TODO: replace with real prod starting inventory
   },
   {
     title: "Laser Ammo CZ Shadow 2 Recoil Training Handgun",
@@ -343,7 +350,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-cz-shadow-2/angle.png",
       "/images/la-cz-shadow-2/detail.png",
     ],
-    stockQuantity: 8,
+    stockQuantity: 8, // TODO: replace with real prod starting inventory
   },
   {
     title: "Laser Ammo 2011 MK Recoil Training Handgun",
@@ -358,7 +365,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-2011-mk/side.png",
       "/images/la-2011-mk/detail.png",
     ],
-    stockQuantity: 8,
+    stockQuantity: 8, // TODO: replace with real prod starting inventory
   },
 
   // ─── Training Rifles ───────────────────────────────────────
@@ -376,7 +383,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/kwa-ronin-t10/left-2.png",
       "/images/kwa-ronin-t10/detail-1.png",
     ],
-    stockQuantity: 12,
+    stockQuantity: 12, // TODO: replace with real prod starting inventory
   },
 
   // ─── Training Kits ─────────────────────────────────────────
