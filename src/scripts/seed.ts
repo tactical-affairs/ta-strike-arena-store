@@ -59,6 +59,17 @@ type SeedProduct = {
   /** Price in cents */
   price: number;
   images: string[];
+  /**
+   * Stock on hand for non-bundle products. Bundles leave this undefined;
+   * their availability is derived from their components via the inventory kit.
+   */
+  stockQuantity?: number;
+  /**
+   * Marks this product as a bundle/kit. When set, `components` must be
+   * populated and `stockQuantity` must be omitted — the bundle variant uses
+   * an inventory kit that references the component variants' inventory items.
+   */
+  components?: { sku: string; quantity: number }[];
 };
 
 const PRODUCTS: SeedProduct[] = [
@@ -72,6 +83,7 @@ const PRODUCTS: SeedProduct[] = [
     sku: "SA.003.01",
     price: 12500,
     images: ["/images/strike-arena-target/strike-arena-target-front-yellow.jpg"],
+    stockQuantity: 60,
   },
   {
     title: "Pro Target",
@@ -88,6 +100,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/pro-target/pro-target-side-view.jpg",
       "/images/pro-target/pro-target-read-view.jpg",
     ],
+    stockQuantity: 30,
   },
   {
     title: "Training Console",
@@ -102,6 +115,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/training-console/top.png",
       "/images/training-console/ports.png",
     ],
+    stockQuantity: 15,
   },
 
   // ─── Packages ──────────────────────────────────────────────
@@ -114,6 +128,7 @@ const PRODUCTS: SeedProduct[] = [
     sku: "SA.004.01",
     price: 29700,
     images: ["/images/strike-arena-target/strike-arena-3-target-package-yellow.jpg"],
+    components: [{ sku: "SA.003.01", quantity: 3 }],
   },
   {
     title: "Home Premium Package",
@@ -124,6 +139,7 @@ const PRODUCTS: SeedProduct[] = [
     sku: "SA.008.01",
     price: 49500,
     images: ["/images/strike-arena-target/strike-arena-5-target-package-yellow.jpg"],
+    components: [{ sku: "SA.003.01", quantity: 5 }],
   },
   {
     title: "Pro Plus Package",
@@ -140,6 +156,10 @@ const PRODUCTS: SeedProduct[] = [
       "/images/pro-target/pro-target-angled-view.jpg",
       "/images/pro-target/pro-target-side-view.jpg",
       "/images/pro-target/pro-target-read-view.jpg",
+    ],
+    components: [
+      { sku: "SA.001.01", quantity: 5 },
+      { sku: "SA.002.01", quantity: 1 },
     ],
   },
   {
@@ -158,6 +178,10 @@ const PRODUCTS: SeedProduct[] = [
       "/images/pro-target/pro-target-side-view.jpg",
       "/images/pro-target/pro-target-read-view.jpg",
     ],
+    components: [
+      { sku: "SA.001.01", quantity: 10 },
+      { sku: "SA.002.01", quantity: 1 },
+    ],
   },
 
   // ─── Laser Attachments ─────────────────────────────────────
@@ -175,6 +199,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-spider-kit/laser.png",
       "/images/la-spider-kit/kit.png",
     ],
+    stockQuantity: 25,
   },
   {
     title: "Laser Ammo Flash Kit",
@@ -190,6 +215,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-flash-kit/laser.png",
       "/images/la-flash-kit/kit.png",
     ],
+    stockQuantity: 20,
   },
 
   // ─── Training Handguns ─────────────────────────────────────
@@ -207,6 +233,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/kwa-atp-gt/left-2.png",
       "/images/kwa-atp-gt/right-2.png",
     ],
+    stockQuantity: 15,
   },
   {
     title: "KWA ATP-Z Training Pistol",
@@ -222,6 +249,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/kwa-atp-z/left-2.png",
       "/images/kwa-atp-z/right-2.png",
     ],
+    stockQuantity: 15,
   },
   {
     title: "Laser Ammo Glock 17 Recoil Training Handgun",
@@ -236,6 +264,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-glock-17/angle.png",
       "/images/la-glock-17/detail.png",
     ],
+    stockQuantity: 10,
   },
   {
     title: "Laser Ammo Glock 19 Recoil Training Handgun",
@@ -251,6 +280,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-glock-19/side.png",
       "/images/la-glock-19/detail.png",
     ],
+    stockQuantity: 10,
   },
   {
     title: "Laser Ammo Glock 45 Recoil Training Handgun",
@@ -266,6 +296,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-glock-45/side.png",
       "/images/la-glock-45/detail.png",
     ],
+    stockQuantity: 10,
   },
   {
     title: "Laser Ammo Sig P320/M17 Recoil Training Handgun",
@@ -281,6 +312,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-sig-m17/side.png",
       "/images/la-sig-m17/detail.png",
     ],
+    stockQuantity: 10,
   },
   {
     title: "Laser Ammo Sig P320/M18 Compact Recoil Training Handgun",
@@ -295,6 +327,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-sig-m18/angle.png",
       "/images/la-sig-m18/side.png",
     ],
+    stockQuantity: 10,
   },
   {
     title: "Laser Ammo CZ Shadow 2 Recoil Training Handgun",
@@ -310,6 +343,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-cz-shadow-2/angle.png",
       "/images/la-cz-shadow-2/detail.png",
     ],
+    stockQuantity: 8,
   },
   {
     title: "Laser Ammo 2011 MK Recoil Training Handgun",
@@ -324,6 +358,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-2011-mk/side.png",
       "/images/la-2011-mk/detail.png",
     ],
+    stockQuantity: 8,
   },
 
   // ─── Training Rifles ───────────────────────────────────────
@@ -341,6 +376,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/kwa-ronin-t10/left-2.png",
       "/images/kwa-ronin-t10/detail-1.png",
     ],
+    stockQuantity: 12,
   },
 
   // ─── Training Kits ─────────────────────────────────────────
@@ -357,6 +393,10 @@ const PRODUCTS: SeedProduct[] = [
       "/images/kwa-atp-gt/left-1.png",
       "/images/kit-starter-handgun-glock/spider-kit.png",
     ],
+    components: [
+      { sku: "101-00244", quantity: 1 },
+      { sku: "SPDRKIT-IR", quantity: 1 },
+    ],
   },
   {
     title: "Starter Recoil Training Handgun (Sig Style)",
@@ -371,6 +411,10 @@ const PRODUCTS: SeedProduct[] = [
       "/images/kwa-atp-z/left-1.png",
       "/images/kit-starter-handgun-sig/spider-kit.png",
     ],
+    components: [
+      { sku: "101-00271", quantity: 1 },
+      { sku: "SPDRKIT-IR", quantity: 1 },
+    ],
   },
   {
     title: "Starter Recoil Training Rifle (AR-15)",
@@ -383,6 +427,10 @@ const PRODUCTS: SeedProduct[] = [
     images: [
       "/images/kit-starter-rifle-ar15/combined.png",
       "/images/kit-starter-rifle-ar15/flash-kit.png",
+    ],
+    components: [
+      { sku: "106-01410-ETU", quantity: 1 },
+      { sku: "FLASHKIT-IR", quantity: 1 },
     ],
   },
 ];
@@ -770,72 +818,103 @@ export default async function seedDemoData({ container }: ExecArgs) {
     `Uploaded ${Array.from(productImagesByHandle.values()).flat().length} product images.`
   );
 
+  // Bundle products must be created AFTER their components so their
+  // inventory kits can reference the components' inventory_items.
+  const nonBundles = PRODUCTS.filter((p) => !p.components);
+  const bundles = PRODUCTS.filter((p) => !!p.components);
+
+  const makeProductInput = (
+    p: SeedProduct,
+    extraVariantFields: Record<string, unknown>
+  ) => ({
+    title: p.title,
+    handle: p.handle,
+    description: p.description,
+    status: ProductStatus.PUBLISHED,
+    shipping_profile_id: shippingProfile.id,
+    category_ids: [
+      categoryResult.find((cat) => cat.name === p.category)!.id,
+    ],
+    images: productImagesByHandle.get(p.handle)!,
+    options: [{ title: "Default", values: ["Default"] }],
+    variants: [
+      {
+        title: "Default",
+        sku: p.sku,
+        options: { Default: "Default" },
+        prices: [{ amount: p.price, currency_code: "usd" }],
+        ...extraVariantFields,
+      },
+    ],
+    sales_channels: [{ id: defaultSalesChannel[0].id }],
+  });
+
+  // Pass 1 — non-bundle products. Medusa auto-creates one inventory_item per variant.
   await createProductsWorkflow(container).run({
     input: {
-      products: PRODUCTS.map((p) => ({
-        title: p.title,
-        handle: p.handle,
-        description: p.description,
-        status: ProductStatus.PUBLISHED,
-        shipping_profile_id: shippingProfile.id,
-        category_ids: [
-          categoryResult.find((cat) => cat.name === p.category)!.id,
-        ],
-        images: productImagesByHandle.get(p.handle)!,
-        options: [
-          {
-            title: "Default",
-            values: ["Default"],
-          },
-        ],
-        variants: [
-          {
-            title: "Default",
-            sku: p.sku,
-            options: {
-              Default: "Default",
-            },
-            prices: [
-              {
-                amount: p.price,
-                currency_code: "usd",
-              },
-            ],
-          },
-        ],
-        sales_channels: [
-          {
-            id: defaultSalesChannel[0].id,
-          },
-        ],
-      })),
+      products: nonBundles.map((p) =>
+        makeProductInput(p, { manage_inventory: true })
+      ),
     },
   });
-  logger.info("Finished seeding product data.");
+  logger.info(`Seeded ${nonBundles.length} non-bundle products.`);
+
+  // Build SKU → inventory_item_id map from the just-created variants.
+  const { data: variantsForKit } = await query.graph({
+    entity: "product_variant",
+    fields: ["sku", "inventory_items.inventory_item_id"],
+    filters: { sku: nonBundles.map((p) => p.sku) },
+  });
+  const inventoryItemBySku = new Map<string, string>();
+  for (const v of variantsForKit as Array<{
+    sku: string | null;
+    inventory_items: Array<{ inventory_item_id: string }> | null;
+  }>) {
+    const itemId = v.inventory_items?.[0]?.inventory_item_id;
+    if (v.sku && itemId) inventoryItemBySku.set(v.sku, itemId);
+  }
+
+  // Pass 2 — bundle products. Each variant is an inventory kit of existing inventory_items.
+  await createProductsWorkflow(container).run({
+    input: {
+      products: bundles.map((p) => {
+        const kit = p.components!.map((c) => {
+          const id = inventoryItemBySku.get(c.sku);
+          if (!id) {
+            throw new Error(
+              `Bundle ${p.sku} references missing component SKU ${c.sku}`
+            );
+          }
+          return { inventory_item_id: id, required_quantity: c.quantity };
+        });
+        return makeProductInput(p, { inventory_items: kit });
+      }),
+    },
+  });
+  logger.info(
+    `Seeded ${bundles.length} bundle products via inventory kits.`
+  );
 
   // ── Inventory levels ─────────────────────────────────────
+  // Only non-bundle inventory items get levels; bundles inherit from components.
 
   logger.info("Seeding inventory levels.");
 
-  const { data: inventoryItems } = await query.graph({
-    entity: "inventory_item",
-    fields: ["id"],
-  });
+  const stockBySku = new Map(
+    nonBundles.map((p) => [p.sku, p.stockQuantity ?? 0])
+  );
 
   const inventoryLevels: CreateInventoryLevelInput[] = [];
-  for (const inventoryItem of inventoryItems) {
-    const inventoryLevel = {
+  for (const [sku, inventoryItemId] of inventoryItemBySku) {
+    inventoryLevels.push({
       location_id: stockLocation.id,
-      stocked_quantity: 1000000,
-      inventory_item_id: inventoryItem.id,
-    };
-    inventoryLevels.push(inventoryLevel);
+      stocked_quantity: stockBySku.get(sku) ?? 0,
+      inventory_item_id: inventoryItemId,
+    });
   }
 
   await createInventoryLevelsWorkflow(container).run({
-    input: {
-      inventory_levels: inventoryLevels,
-    },
+    input: { inventory_levels: inventoryLevels },
   });
 
   logger.info("Finished seeding inventory levels data.");

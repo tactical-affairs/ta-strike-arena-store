@@ -71,6 +71,26 @@ HTTP Request → src/api/*/route.ts
 
 The seed script (`src/scripts/seed.ts`) reads product images from the sibling repo at `../ta-strike-arena-website/public/images/` and uploads each file through the File Module so `product.images[].url` points at wherever the provider stored it. Image filenames are flattened (e.g. `strike-arena-target__front.png`) to avoid collisions across product folders. All uploads use `access: "public"`.
 
+### Inventory kits / bundles
+
+Seven SKUs are bundles composed of other products, using Medusa v2's native **Inventory Kits** feature — a bundle variant doesn't own a fresh inventory_item; instead its `inventory_items` array references the component variants' inventory_items with a `required_quantity`. Medusa then computes the bundle's availability as `min(component_available / required_quantity)` and decrements each component's stock when the bundle sells.
+
+Bundle → component mapping lives declaratively on the `SeedProduct` type in `src/scripts/seed.ts` via the optional `components` field. Presence of `components` makes a product a bundle; non-bundle products declare `stockQuantity` instead. The seed runs in two passes — non-bundles first (so their inventory_items exist), then bundles referencing those inventory_items via a SKU-keyed lookup.
+
+Current bundle catalog:
+
+| Bundle SKU | Components |
+|---|---|
+| SA.004.01 Home Starter Package | 3× SA.003.01 |
+| SA.008.01 Home Premium Package | 5× SA.003.01 |
+| SA.005.01 Pro Plus Package | 5× SA.001.01 + 1× SA.002.01 |
+| SA.006.01 Pro Premium Package | 10× SA.001.01 + 1× SA.002.01 |
+| SA.100.01 Starter Handgun Kit (Sig) | 1× 101-00271 + 1× SPDRKIT-IR |
+| SA.101.01 Starter Handgun Kit (Glock) | 1× 101-00244 + 1× SPDRKIT-IR |
+| SA.102.01 Starter Rifle Kit (AR-15) | 1× 106-01410-ETU + 1× FLASHKIT-IR |
+
+To add a new bundle: append a `SeedProduct` entry with `components: [{ sku, quantity }, ...]` and no `stockQuantity`. To add a new non-bundle: append with `stockQuantity: N` and no `components`. The two-pass seed handles the rest. See Medusa's [Inventory Kits docs](https://docs.medusajs.com/resources/commerce-modules/inventory/inventory-kit) for the underlying concepts.
+
 ### Payment providers
 
 `medusa-config.ts` registers the Payment Module conditionally, based on env vars:

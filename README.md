@@ -133,7 +133,8 @@ The seed script (`src/scripts/seed.ts`) creates the Strike Arena catalog:
 - **1 stock location**
 - **Shipping options**: flat-rate
 - **6 product categories**: Targets, Packages, Laser Attachments, Training Handguns, Training Rifles, Training Kits
-- **~28 products** (targets, console, packages, laser attachments, training handguns, training rifles, bundles)
+- **22 products** — 15 standalone (targets, console, handguns, rifle, laser kits) and 7 **bundles** (Home/Pro target packages, Starter Handgun/Rifle Kits) that use Medusa's native [Inventory Kits](https://docs.medusajs.com/resources/commerce-modules/inventory/inventory-kit) feature. Bundle availability is automatically computed as `min(component_stock / required_quantity)`, and each component's stock is decremented when a bundle is sold. See `CLAUDE.md` for the bundle mapping table and how to add new ones.
+- **Realistic per-SKU stock quantities** (e.g. 60 Home Targets, 30 Pro Targets, 15 Training Consoles, 8–15 of each training firearm) so bundle constraints are observable during testing
 - **Product images** — reads from `../ta-strike-arena-website/public/images/` and uploads each file through the File Module. Lands in `./static/` with the local provider (dev) or Cloudflare R2 (when `S3_*` env vars are set)
 - **Publishable API key** linked to the default sales channel
 
