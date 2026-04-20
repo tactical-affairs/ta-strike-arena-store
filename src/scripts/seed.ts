@@ -77,6 +77,12 @@ type SeedProduct = {
    * an inventory kit that references the component variants' inventory items.
    */
   components?: { sku: string; quantity: number }[];
+  /**
+   * Optional manufacturer's suggested retail price in cents. When set, it's
+   * stored as `variant.metadata.msrp_cents` and the storefront's prebuild
+   * sync pulls it to drive "Save $X (Y% off)" copy on product pages.
+   */
+  msrpCents?: number;
 };
 
 const PRODUCTS: SeedProduct[] = [
@@ -136,6 +142,7 @@ const PRODUCTS: SeedProduct[] = [
     price: 29700,
     images: ["/images/strike-arena-target/strike-arena-3-target-package-yellow.jpg"],
     components: [{ sku: "SA.003.01", quantity: 3 }],
+    msrpCents: 37500,
   },
   {
     title: "Home Premium Package",
@@ -147,6 +154,7 @@ const PRODUCTS: SeedProduct[] = [
     price: 49500,
     images: ["/images/strike-arena-target/strike-arena-5-target-package-yellow.jpg"],
     components: [{ sku: "SA.003.01", quantity: 5 }],
+    msrpCents: 62500,
   },
   {
     title: "Pro Plus Package",
@@ -168,6 +176,7 @@ const PRODUCTS: SeedProduct[] = [
       { sku: "SA.001.01", quantity: 5 },
       { sku: "SA.002.01", quantity: 1 },
     ],
+    msrpCents: 150900,
   },
   {
     title: "Pro Premium Package",
@@ -189,6 +198,7 @@ const PRODUCTS: SeedProduct[] = [
       { sku: "SA.001.01", quantity: 10 },
       { sku: "SA.002.01", quantity: 1 },
     ],
+    msrpCents: 275400,
   },
 
   // ─── Laser Attachments ─────────────────────────────────────
@@ -850,6 +860,9 @@ export default async function seedDemoData({ container }: ExecArgs) {
         sku: p.sku,
         options: { Default: "Default" },
         prices: [{ amount: p.price, currency_code: "usd" }],
+        ...(p.msrpCents != null
+          ? { metadata: { msrp_cents: p.msrpCents } }
+          : {}),
         ...extraVariantFields,
       },
     ],
