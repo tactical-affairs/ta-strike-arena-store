@@ -93,16 +93,18 @@ The storefront connects to this backend using the Medusa JS SDK with a publishab
 
 ## Production
 
-Deployed to Railway. For the **first-time** promotion (R2 bucket setup, running the seed against the prod DB, creating the admin user, switching the storefront to point at prod) see the full sequence in [`CLAUDE.md`](CLAUDE.md#production-setup) — that doc stays authoritative so this README doesn't duplicate moving details.
+Deployed to Railway. Full **first-time** promotion sequence (infrastructure, env vars, initial seed, admin user, FluidPay region attachment, smoke test) is in [`CLAUDE.md → Production Setup`](CLAUDE.md#production-setup) — that doc stays authoritative so this README doesn't duplicate moving details.
 
 Quick checklist:
 
 1. Build (`npm run build`) and start (`npm run start`) are the deploy commands; Railway runs both automatically.
-2. Set `JWT_SECRET` and `COOKIE_SECRET` to strong, unique values.
+2. Set `JWT_SECRET` and `COOKIE_SECRET` to strong, unique values — never the `supersecret` default.
 3. Set `STORE_CORS`, `ADMIN_CORS`, `AUTH_CORS` to the production domains.
-4. Set all six `S3_*` env vars to switch uploads to Cloudflare R2.
-5. Optionally set `FLUIDPAY_*` vars to enable the FluidPay payment provider.
-6. Run `npx medusa db:setup` + `npm run seed` once (from a local shell with prod env loaded) to populate the catalog. After that, evolve the catalog via the Admin UI or one-off `medusa exec` scripts — **never** re-run `npm run seed` against prod.
+4. Set all six `S3_*` env vars to switch file uploads to Cloudflare R2.
+5. Set all four `FLUIDPAY_*` vars — including `FLUIDPAY_BASE_URL=https://app.fluidpay.com` (NOT sandbox) and live `pub_.../api_...` credentials — to register the FluidPay payment provider.
+6. Run `npx medusa db:setup` + `npm run seed` once (from a local shell with prod env loaded) to populate the catalog. Replace dev `stockQuantity` values in `src/scripts/seed.ts` with real starting inventory first (look for `// TODO` markers). After seeding, evolve the catalog via the Admin UI or one-off `medusa exec` scripts — **never** re-run `npm run seed` against prod.
+7. Create an admin user (`npx medusa user ...`) and attach `pp_fluidpay_fluidpay` to the USA region via Admin UI or Admin API (see CLAUDE.md).
+8. Hand the publishable API key and FluidPay public key off to the storefront's `.env.production` — see [`ta-strike-arena-website/README.md`](../ta-strike-arena-website/README.md#deploy-to-github-pages).
 
 ## Scripts
 

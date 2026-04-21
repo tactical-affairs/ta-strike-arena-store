@@ -143,36 +143,76 @@ Claude Code is configured with `additionalDirectories` in `.claude/settings.loca
 
 ## Production Setup
 
-First-time promotion from dev to production:
+First-time promotion from dev to production. Do these in order; each step depends on the previous one.
 
-1. **Cloudflare R2**
-   - Create a bucket (e.g. `ta-strike-arena-images`), enable public access.
-   - Create an API token scoped to that bucket with Object Read + Write.
-   - Note the S3 endpoint (`https://<account-id>.r2.cloudflarestorage.com`) and public URL (`https://pub-<hash>.r2.dev` or a custom domain).
+### 1. Provision infrastructure
 
-2. **Railway env vars**
+- **Railway project** with this repo connected (auto-deploys on push to `main`). Includes managed Postgres + Redis plugins, or wire your own.
+- **Cloudflare R2 bucket** (e.g. `ta-strike-arena-images`) with public access enabled and an API token scoped to Object Read + Write. Note the S3 endpoint (`https://<account-id>.r2.cloudflarestorage.com`) and public URL (`https://pub-<hash>.r2.dev` or a custom domain).
+- **FluidPay merchant account** with production credentials (`pub_...` + `api_...`). Dashboard: https://app.fluidpay.com.
 
-   | Variable | Value |
-   |----------|-------|
-   | `S3_FILE_URL` | R2 public URL (where images are served from) |
-   | `S3_ACCESS_KEY_ID` | R2 API token Access Key ID |
-   | `S3_SECRET_ACCESS_KEY` | R2 API token Secret Access Key |
-   | `S3_REGION` | `auto` |
-   | `S3_BUCKET` | `ta-strike-arena-images` |
-   | `S3_ENDPOINT` | R2 endpoint URL |
+### 2. Railway env vars
 
-3. **Initial seed (run once)**
+Set all of these in the Railway service's Variables tab before first deploy. **Never commit production secrets to git.**
 
-   From a local shell with prod env vars exported (via `railway run` or a `.env.production` file):
-   ```bash
-   NODE_ENV=production npx medusa db:setup --db <prod-db-name>
-   NODE_ENV=production npm run seed
-   NODE_ENV=production npx medusa user -e <email> -p <password>
-   ```
+| Variable | Value | Why |
+|---|---|---|
+| `DATABASE_URL` | Postgres URL (from Railway Postgres plugin) | |
+| `REDIS_URL` | Redis URL (from Railway Redis plugin) | |
+| `JWT_SECRET` | strong random (≥32 bytes) | Never the default `supersecret` |
+| `COOKIE_SECRET` | strong random (≥32 bytes, distinct from JWT) | Same |
+| `STORE_CORS` | `https://strikearena.net` (no trailing slash) | Storefront origin |
+| `ADMIN_CORS` | Railway backend URL | Admin UI origin |
+| `AUTH_CORS` | both of the above, comma-separated | Auth endpoint origins |
+| `S3_FILE_URL` | R2 public URL | File provider switches from local to R2 when set |
+| `S3_ACCESS_KEY_ID` | R2 API token Access Key ID | |
+| `S3_SECRET_ACCESS_KEY` | R2 API token Secret Access Key | |
+| `S3_REGION` | `auto` | |
+| `S3_BUCKET` | `ta-strike-arena-images` | |
+| `S3_ENDPOINT` | R2 S3-compat endpoint URL | |
+| `FLUIDPAY_API_KEY` | production `api_...` secret key | Payment provider registers only when this is set |
+| `FLUIDPAY_PUBLIC_KEY` | production `pub_...` public key | Stored on payment sessions so the storefront can render the Tokenizer |
+| `FLUIDPAY_BASE_URL` | `https://app.fluidpay.com` | Must be the prod host, **not** sandbox |
+| `FLUIDPAY_CAPTURE_MODE` | `authorize` (default) or `sale` | `authorize` lets admins review before capturing |
 
-   The seed uploads all 70+ product images from `../ta-strike-arena-website/public/images/` to R2 and creates products in the prod Postgres with R2 URLs.
+### 3. Initial seed (run once, from local shell)
 
-4. **Wire up the frontend** — see `ta-strike-arena-website/CLAUDE.md#production-setup-first-time`.
+With the prod env loaded locally — either via `railway run -- <cmd>` or a throwaway `.env.production` file you delete afterward — run:
+
+```bash
+NODE_ENV=production npx medusa db:setup --db <prod-db-name>
+NODE_ENV=production npm run seed
+NODE_ENV=production npx medusa user -e <email> -p <strong-password>
+```
+
+Before seeding, replace the dev `stockQuantity` values in `src/scripts/seed.ts` with real starting inventory (search for `// TODO: replace with real prod starting inventory`). The seed uploads ~76 product images from `../ta-strike-arena-website/public/images/` to R2 and creates all 22 products (15 standalone + 7 bundles) in prod Postgres with R2 URLs.
+
+### 4. Enable FluidPay on the region
+
+With the backend deployed and reachable, authenticate as admin and attach the provider to the USA region (the seed creates only the `pp_system_default` attachment):
+
+```bash
+TOKEN=$(curl -s -X POST https://<railway-backend>/auth/user/emailpass \
+  -H "Content-Type: application/json" \
+  -d '{"email":"<admin-email>","password":"<admin-pass>"}' \
+  | jq -r .token)
+REGION_ID=$(curl -s -H "Authorization: Bearer $TOKEN" \
+  https://<railway-backend>/admin/regions \
+  | jq -r '.regions[0].id')
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  https://<railway-backend>/admin/regions/$REGION_ID \
+  -d '{"payment_providers":["pp_fluidpay_fluidpay","pp_system_default"]}'
+```
+
+Or do it in the Admin UI: Settings → Regions → United States → add `pp_fluidpay_fluidpay`.
+
+### 5. Wire up the frontend
+
+See [`ta-strike-arena-website/CLAUDE.md`](../ta-strike-arena-website/CLAUDE.md#production-setup-first-time). The storefront needs the new publishable API key, its own FluidPay public key, and a rebuild/redeploy so the prebuild sync picks up prod pricing + images + variant IDs.
+
+### 6. Smoke test
+
+Before announcing launch: place one real low-value order end-to-end against prod. Confirm the order appears in Admin → Orders with an authorized payment, the R2-hosted images load, and the confirmation page shows an order ID. If capturing manually (`FLUIDPAY_CAPTURE_MODE=authorize`), also exercise the capture flow from the admin UI once.
 
 ### Post-launch changes
 
