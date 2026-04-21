@@ -77,21 +77,27 @@ class FluidPayProviderService extends AbstractPaymentProvider<FluidPayProviderOp
   }
 
   /**
-   * Called when a payment session is created during checkout. At this point
-   * the customer has chosen FluidPay but hasn't tokenized a card yet — we
-   * just return the public key + amount so the storefront can render the
-   * Tokenizer iframe. The actual transaction is created in authorizePayment
-   * once we have a token.
+   * Called when a payment session is created during checkout. Stores the
+   * public key + amount so the storefront can render the Tokenizer iframe,
+   * and preserves any `paymentToken` the storefront passed through
+   * (typical flow: tokenize on the client first, then submit session data
+   * including the `tok_...` — `authorizePayment` reads it from here).
    */
   async initiatePayment(
     input: InitiatePaymentInput
   ): Promise<InitiatePaymentOutput> {
-    const data: FluidPaySessionData = {
-      transactionId: null,
+    const incoming = (input.data ?? {}) as Partial<
+      FluidPaySessionData & { paymentToken?: string }
+    >;
+    const data: FluidPaySessionData & { paymentToken?: string } = {
+      transactionId: incoming.transactionId ?? null,
       publicKey: this.options_.publicKey,
       amount: Number(input.amount),
       currency: input.currency_code,
-      status: "pending",
+      status: incoming.status ?? "pending",
+      ...(incoming.paymentToken
+        ? { paymentToken: incoming.paymentToken }
+        : {}),
     };
     return { id: `fluidpay_pending_${Date.now()}`, data };
   }
