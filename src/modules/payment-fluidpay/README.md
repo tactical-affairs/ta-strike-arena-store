@@ -25,15 +25,38 @@ Custom Medusa v2 Payment Module Provider for [FluidPay](https://www.fluidpay.com
 
 ## What still needs doing before shipping
 
-1. **Verify FluidPay API payloads.** `client.ts` uses the documented endpoint paths and payload shape, but you should confirm against your actual FluidPay account's API reference — field names like `payment_method.token`, `reference_id` may differ by account / API version.
-2. **Map FluidPay statuses → Medusa `PaymentSessionStatus`.** The `mapStatus()` switch in `service.ts` covers the common cases; confirm the full list of statuses your account emits.
+1. **Verify FluidPay API payloads against a real sandbox transaction.** `client.ts` uses the documented endpoint paths and payload shape, but confirm against your account's API reference — field names like `payment_method.token`, `reference_id` may differ by account / API version. First failed transaction's error message is the fastest way to spot any drift.
+2. **Map FluidPay statuses → Medusa `PaymentSessionStatus`.** The `mapStatus()` switch in `service.ts` covers the common cases (`approved`, `authorized`, `captured`, `settled`, `voided`, `cancelled`, `declined`, `failed`). Confirm the full list of statuses your account emits and extend if needed.
 3. **Webhooks.** Implement `getWebhookActionAndData()` so Medusa reacts to async state changes (e.g., ACH settlement, chargebacks). Register a webhook URL in the FluidPay dashboard pointing at `${MEDUSA_BACKEND_URL}/hooks/payment/fluidpay_fluidpay`.
-4. **Storefront integration** (`ta-strike-arena-website`):
-   - Swap the Authorize.net Accept.js script on `/checkout/` for the FluidPay Tokenizer.
-   - After tokenization, call `PATCH /store/payment-collections/:id/payment-sessions/:id` (or equivalent SDK call) with `{ data: { paymentToken: "tok_..." } }`.
-   - Then `POST /store/carts/:id/complete` to authorize + place the order.
-5. **Enable the provider in a region** via Medusa Admin → Settings → Regions → add the `pp_fluidpay_fluidpay` payment provider.
 
 ## Activation
 
-The provider only registers when `FLUIDPAY_API_KEY` is set. Until then Medusa runs without it (so Authorize.net can keep handling payments during the migration).
+The provider only registers when `FLUIDPAY_API_KEY` is set. To enable it locally: populate the four `FLUIDPAY_*` vars in `.env` (see `.env.template`), restart Medusa, then attach `pp_fluidpay_fluidpay` to the relevant region (Admin → Settings → Regions, or via the Admin API).
+
+## Sandbox testing
+
+The sandbox environment at `https://sandbox.fluidpay.com` processes no real money. Full test-data reference: [`/docs/test_data/`](https://sandbox.fluidpay.com/docs/test_data/).
+
+**Keys**: sandbox uses `pub_...` / `api_...` like production — just a different set tied to your sandbox account.
+
+**Test cards** (sandbox only; these do nothing in prod):
+
+| Card number | Brand | Trigger |
+|---|---|---|
+| `4111 1111 1111 1111` | Visa | Approved |
+| `5555 5555 5555 4444` | Mastercard | Approved |
+| `3782 822463 10005` | Amex | Approved |
+| `6011 1111 1111 1117` | Discover | Approved |
+| `4000 0000 0000 0002` | Visa | Generic decline |
+| `4000 0000 0000 9995` | Visa | Insufficient funds |
+
+**Verification mismatch triggers** (combine with any approval card):
+
+| Input | Triggers |
+|---|---|
+| CVV `200` | CVV does-not-match response |
+| Billing ZIP `20000` | AVS does-not-match response |
+
+Any valid future expiration date works (e.g. `12/27`). Any CVV other than `200` is treated as a match.
+
+**Switching to production**: set `FLUIDPAY_BASE_URL=https://app.fluidpay.com` on the backend and `NEXT_PUBLIC_FLUIDPAY_SANDBOX=false` on the storefront. Swap the key pair for your live `pub_.../api_...` credentials. Test cards will be rejected in prod.
