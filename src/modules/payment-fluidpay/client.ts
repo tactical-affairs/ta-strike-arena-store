@@ -53,10 +53,12 @@ export class FluidPayClient {
     path: string,
     init: RequestInit = {}
   ): Promise<T> {
+    // FluidPay expects the secret key in the Authorization header verbatim,
+    // NOT prefixed with "Bearer " — the Bearer form returns 401.
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: this.apiKey,
         "Content-Type": "application/json",
         ...(init.headers ?? {}),
       },
