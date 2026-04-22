@@ -127,6 +127,10 @@ class FluidPayProviderService extends AbstractPaymentProvider<FluidPayProviderOp
       paymentToken: data.paymentToken,
     });
 
+    this.logger_.debug(
+      `[fluidpay] authorize response: id=${txn.id} status=${txn.status}`
+    );
+
     return {
       status: this.mapStatus(txn.status),
       data: {
