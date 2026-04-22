@@ -25,7 +25,11 @@ import type {
   UpdatePaymentOutput,
   WebhookActionResult,
 } from "@medusajs/framework/types";
-import { FluidPayClient, type FluidPayTransaction } from "./client";
+import {
+  FluidPayClient,
+  type FluidPayBillingAddress,
+  type FluidPayTransaction,
+} from "./client";
 
 export type FluidPayProviderOptions = {
   apiKey: string;
@@ -125,6 +129,7 @@ class FluidPayProviderService extends AbstractPaymentProvider<FluidPayProviderOp
       amount: data.amount,
       currency: data.currency,
       paymentToken: data.paymentToken,
+      billingAddress: extractBillingAddress(input),
     });
 
     this.logger_.debug(
@@ -245,6 +250,33 @@ class FluidPayProviderService extends AbstractPaymentProvider<FluidPayProviderOp
         return "pending" as PaymentSessionStatus;
     }
   }
+}
+
+/**
+ * Pulls the cart's billing address out of Medusa's payment-provider
+ * context and maps it to FluidPay's address shape (for AVS on the
+ * card-issuer side). Medusa's PaymentAddressDTO only exposes the
+ * generic address fields — recipient name comes from
+ * context.customer.{first_name,last_name}.
+ */
+function extractBillingAddress(
+  input: AuthorizePaymentInput,
+): FluidPayBillingAddress | undefined {
+  const customer = input.context?.customer;
+  const ba = customer?.billing_address;
+  if (!ba) return undefined;
+  return {
+    first_name: customer?.first_name ?? undefined,
+    last_name: customer?.last_name ?? undefined,
+    address_line_1: ba.address_1 ?? undefined,
+    address_line_2: ba.address_2 ?? undefined,
+    city: ba.city ?? undefined,
+    state: ba.province ?? undefined,
+    postal_code: ba.postal_code ?? undefined,
+    country: ba.country_code?.toUpperCase() ?? undefined,
+    email: customer?.email ?? undefined,
+    phone: ba.phone ?? customer?.phone ?? undefined,
+  };
 }
 
 export default FluidPayProviderService;

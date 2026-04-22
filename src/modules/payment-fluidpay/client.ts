@@ -25,6 +25,19 @@ export type FluidPayTransaction = {
   [key: string]: unknown;
 };
 
+export type FluidPayBillingAddress = {
+  first_name?: string;
+  last_name?: string;
+  address_line_1?: string;
+  address_line_2?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
+  email?: string;
+  phone?: string;
+};
+
 type CreateTransactionInput = {
   /** "sale" (auth + capture) or "authorize" (auth only, capture later) */
   type: "sale" | "authorize";
@@ -33,6 +46,8 @@ type CreateTransactionInput = {
   currency: string;
   /** Token from the FluidPay Tokenizer iframe (starts with `tok_`) */
   paymentToken: string;
+  /** Billing address for AVS. */
+  billingAddress?: FluidPayBillingAddress;
   /** Idempotency/reference id for reconciliation */
   referenceId?: string;
   metadata?: Record<string, unknown>;
@@ -98,6 +113,9 @@ export class FluidPayClient {
         amount: toMinorUnit(input.amount),
         currency: input.currency,
         payment_method: { token: input.paymentToken },
+        ...(input.billingAddress
+          ? { billing_address: input.billingAddress }
+          : {}),
         reference_id: input.referenceId,
         metadata: input.metadata,
       }),
