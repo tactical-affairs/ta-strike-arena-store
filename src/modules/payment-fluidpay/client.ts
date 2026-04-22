@@ -28,7 +28,7 @@ export type FluidPayTransaction = {
 type CreateTransactionInput = {
   /** "sale" (auth + capture) or "authorize" (auth only, capture later) */
   type: "sale" | "authorize";
-  /** Amount in the smallest currency unit (cents for USD) */
+  /** Amount in the currency's main unit (e.g. dollars for USD). */
   amount: number;
   currency: string;
   /** Token from the FluidPay Tokenizer iframe (starts with `tok_`) */
@@ -37,6 +37,16 @@ type CreateTransactionInput = {
   referenceId?: string;
   metadata?: Record<string, unknown>;
 };
+
+/**
+ * FluidPay's /api/transaction wants the amount in the smallest currency
+ * unit (cents for USD). Medusa stores and passes prices in the main unit
+ * (dollars), so we convert at this boundary. `Math.round` absorbs the
+ * tiny float drift a BigNumber-derived number may carry.
+ */
+function toMinorUnit(amount: number): number {
+  return Math.round(amount * 100);
+}
 
 export class FluidPayClient {
   private apiKey: string;
@@ -81,12 +91,11 @@ export class FluidPayClient {
   createTransaction(
     input: CreateTransactionInput
   ): Promise<FluidPayTransaction> {
-    // TODO: verify the exact payload shape against FluidPay's /api/transaction docs.
     return this.request<FluidPayTransaction>("/api/transaction", {
       method: "POST",
       body: JSON.stringify({
         type: input.type,
-        amount: input.amount,
+        amount: toMinorUnit(input.amount),
         currency: input.currency,
         payment_method: { token: input.paymentToken },
         reference_id: input.referenceId,
@@ -101,26 +110,32 @@ export class FluidPayClient {
 
   captureTransaction(
     id: string,
+    /** Amount in the main unit (dollars); omit to capture the full authorized amount. */
     amount?: number
   ): Promise<FluidPayTransaction> {
     return this.request<FluidPayTransaction>(
       `/api/transaction/${id}/capture`,
       {
         method: "POST",
-        body: JSON.stringify(amount != null ? { amount } : {}),
+        body: JSON.stringify(
+          amount != null ? { amount: toMinorUnit(amount) } : {}
+        ),
       }
     );
   }
 
   refundTransaction(
     id: string,
+    /** Amount in the main unit (dollars); omit for a full refund. */
     amount?: number
   ): Promise<FluidPayTransaction> {
     return this.request<FluidPayTransaction>(
       `/api/transaction/${id}/refund`,
       {
         method: "POST",
-        body: JSON.stringify(amount != null ? { amount } : {}),
+        body: JSON.stringify(
+          amount != null ? { amount: toMinorUnit(amount) } : {}
+        ),
       }
     );
   }

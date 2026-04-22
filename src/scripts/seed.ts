@@ -48,7 +48,9 @@ const MIME_BY_EXT: Record<string, string> = {
 
 // ─── Product data ────────────────────────────────────────────
 // Sourced from ta-strike-arena-website/src/data/shop-products.ts
-// Prices in cents (USD).
+// Prices in USD (denominated — $125.00 is `125`, $1,283.50 would be `1283.5`).
+// Medusa v2 stores amounts as BigNumbers in the currency's main unit; the
+// FluidPay payment provider module converts to cents at the API boundary.
 //
 // ⚠️  BEFORE PRODUCTION SEED: every non-bundle product has a stockQuantity
 // value tuned for dev testing (bundle math visible, nothing runs out
@@ -63,7 +65,7 @@ type SeedProduct = {
   description: string;
   category: string;
   sku: string;
-  /** Price in cents */
+  /** Price in USD (same denomination Medusa stores internally — e.g. `125` = $125.00). */
   price: number;
   images: string[];
   /**
@@ -78,11 +80,11 @@ type SeedProduct = {
    */
   components?: { sku: string; quantity: number }[];
   /**
-   * Optional manufacturer's suggested retail price in cents. When set, it's
-   * stored as `variant.metadata.msrp_cents` and the storefront's prebuild
+   * Optional manufacturer's suggested retail price in USD. When set, it's
+   * stored as `variant.metadata.msrp_amount` and the storefront's prebuild
    * sync pulls it to drive "Save $X (Y% off)" copy on product pages.
    */
-  msrpCents?: number;
+  msrpAmount?: number;
 };
 
 const PRODUCTS: SeedProduct[] = [
@@ -94,7 +96,7 @@ const PRODUCTS: SeedProduct[] = [
       "The Home Target is the entry point to real performance-based dry fire. Same 7-inch hit zone as our Pro line -- purpose-built for personal training at home. AA batteries mean zero charging downtime: swap and train. Connect via the Strike Arena mobile app (iOS and Android) and you're running timed drills, reactive modes, and multi-target transitions in your garage, basement, or living room. No ammo. No range fees. Just measurable reps that make you faster.",
     category: "Targets",
     sku: "SA.003.01",
-    price: 12500,
+    price: 125,
     images: ["/images/strike-arena-target/strike-arena-target-front-yellow.jpg"],
     stockQuantity: 60, // TODO: replace with real prod starting inventory
   },
@@ -105,7 +107,7 @@ const PRODUCTS: SeedProduct[] = [
       "The Pro Target is the full-capability version of the Strike Arena platform. Multi-color LED feedback unlocks color-coded drills, friend-or-foe scenarios, and instructor-led programs that the Home Target can't run. Built-in rechargeable battery rated for 10+ hours means you set up once and train all day -- connect a powerbank for multi-day events. Whether you're running USPSA-style stages at home or deploying 50+ targets across a commercial facility, this is the target serious trainers and range operators build on.",
     category: "Targets",
     sku: "SA.001.01",
-    price: 24900,
+    price: 249,
     images: [
       "/images/strike-arena-target/strike-arena-target-front-red.png",
       "/images/pro-target/pro-target-front-view.jpg",
@@ -122,7 +124,7 @@ const PRODUCTS: SeedProduct[] = [
       "The Training Console is the brain of every Pro Target setup. It creates a local WiFi network, connects to your Pro targets, and gives you browser-based control from any phone, tablet, or PC. No app downloads. No cloud dependency. Plug it in, open a browser, and you're running drills. Included in every Pro package -- or buy separately if you're adding targets to an existing setup.",
     category: "Targets",
     sku: "SA.002.01",
-    price: 26400,
+    price: 264,
     images: [
       "/images/training-console/angle-side.png",
       "/images/training-console/top.png",
@@ -139,10 +141,10 @@ const PRODUCTS: SeedProduct[] = [
       "Everything you need to start training at home, in one box. Three Home Targets controlled by the Strike Arena mobile app (iOS and Android) -- unbox, power on, pair via Bluetooth, and you're running multi-target drills in under 10 minutes. At $297, you save $78 versus buying each target individually. This is the fastest path from \"I want to train more\" to actual measured reps on reactive targets.",
     category: "Packages",
     sku: "SA.004.01",
-    price: 29700,
+    price: 297,
     images: ["/images/strike-arena-target/strike-arena-3-target-package-yellow.jpg"],
     components: [{ sku: "SA.003.01", quantity: 3 }],
-    msrpCents: 37500,
+    msrpAmount: 375,
   },
   {
     title: "Home Premium Package",
@@ -151,10 +153,10 @@ const PRODUCTS: SeedProduct[] = [
       "Five Home Targets for the serious home trainer. More targets mean more positions, more complex transitions, and more realistic scenario training. Controlled by the Strike Arena mobile app (iOS and Android) -- pair via Bluetooth and you're running five-target drills in your garage, basement, or living room. At $495, you save $130 versus buying each target individually.",
     category: "Packages",
     sku: "SA.008.01",
-    price: 49500,
+    price: 495,
     images: ["/images/strike-arena-target/strike-arena-5-target-package-yellow.jpg"],
     components: [{ sku: "SA.003.01", quantity: 5 }],
-    msrpCents: 62500,
+    msrpAmount: 625,
   },
   {
     title: "Pro Plus Package",
@@ -163,7 +165,7 @@ const PRODUCTS: SeedProduct[] = [
       "Five Pro Targets and a Training Console -- the setup that unlocks serious multi-target training. Run color-coded drills, timed transitions across five positions, and full scenario modes. Fits comfortably in a home training space or small shooting bay. At $1,283, you save $226 versus individual pricing. Most home trainers who want Pro capability start here.",
     category: "Packages",
     sku: "SA.005.01",
-    price: 128300,
+    price: 1283,
     images: [
       "/images/strike-arena-target/strike-arena-5-target-package-red.png",
       "/images/strike-arena-target/strike-arena-5-target-package-rainbow.jpg",
@@ -176,7 +178,7 @@ const PRODUCTS: SeedProduct[] = [
       { sku: "SA.001.01", quantity: 5 },
       { sku: "SA.002.01", quantity: 1 },
     ],
-    msrpCents: 150900,
+    msrpAmount: 1509,
   },
   {
     title: "Pro Premium Package",
@@ -185,7 +187,7 @@ const PRODUCTS: SeedProduct[] = [
       "Ten Pro Targets and a Training Console for full-bay coverage. Run advanced stages with movement, multiple shooting positions, and complex scenario programming. At $2,286, you save $468 versus buying individually. Ideal for dedicated training spaces, small facilities, or serious competitors who want to build stages that mirror match conditions.",
     category: "Packages",
     sku: "SA.006.01",
-    price: 228600,
+    price: 2286,
     images: [
       "/images/strike-arena-target/strike-arena-10-target-package-red.png",
       "/images/strike-arena-target/strike-arena-10-target-package-rainbow.jpg",
@@ -198,7 +200,7 @@ const PRODUCTS: SeedProduct[] = [
       { sku: "SA.001.01", quantity: 10 },
       { sku: "SA.002.01", quantity: 1 },
     ],
-    msrpCents: 275400,
+    msrpAmount: 2754,
   },
 
   // ─── Laser Attachments ─────────────────────────────────────
@@ -209,7 +211,7 @@ const PRODUCTS: SeedProduct[] = [
       "The Spider Kit is a rail-mounted IR laser attachment that turns any Picatinny-equipped handgun into a Strike Arena training tool. Mounts in seconds, emits an infrared pulse on trigger pull, and works with every Strike Arena target. Pair it with a KWA ATP-GT (Glock style) or ATP-Z (Sig style) for gas recoil training with automatic trigger reset -- no racking the slide between shots.",
     category: "Laser Attachments",
     sku: "SPDRKIT-IR",
-    price: 18000,
+    price: 180,
     images: [
       "/images/la-spider-kit/main.png",
       "/images/la-spider-kit/mounted.png",
@@ -225,7 +227,7 @@ const PRODUCTS: SeedProduct[] = [
       "The Flash Kit is a barrel-attached IR laser for rifles with a 14mm CCW thread. Mount it on a KWA Ronin T10 or any compatible training rifle and you're running full rifle drills on Strike Arena targets -- transitions, movement, and timed stages. IR laser ensures reliable detection across the full range of your training space.",
     category: "Laser Attachments",
     sku: "FLASHKIT-IR",
-    price: 20000,
+    price: 200,
     images: [
       "/images/la-flash-kit/main.png",
       "/images/la-flash-kit/mounted.png",
@@ -243,7 +245,7 @@ const PRODUCTS: SeedProduct[] = [
       "Gas recoil training pistol built on the Glock 17 platform. Realistic trigger pull, blowback action, and automatic trigger reset mean you train reloads, magazine changes, and follow-up shots without ever racking the slide. Requires a Laser Ammo Spider Kit (sold separately) to work with Strike Arena targets. If you want a simpler setup with no separate laser attachment, consider the Laser Ammo Glock 17 with built-in IR laser.",
     category: "Training Handguns",
     sku: "101-00244",
-    price: 21000,
+    price: 210,
     images: [
       "/images/kwa-atp-gt/left-1.png",
       "/images/kwa-atp-gt/right-1.png",
@@ -259,7 +261,7 @@ const PRODUCTS: SeedProduct[] = [
       "Gas recoil training pistol built on the Sig P320 platform. Same blowback action and automatic trigger reset as the ATP-GT, in a Sig-compatible frame. Requires a Laser Ammo Spider Kit (sold separately). For a no-attachment option, consider the Laser Ammo Sig P320/M17 with built-in IR laser.",
     category: "Training Handguns",
     sku: "101-00271",
-    price: 21000,
+    price: 210,
     images: [
       "/images/kwa-atp-z/left-1.png",
       "/images/kwa-atp-z/right-1.png",
@@ -275,7 +277,7 @@ const PRODUCTS: SeedProduct[] = [
       "Premium training pistol with a built-in IR laser -- no separate attachment needed. Gas recoil, Glock 17 Gen 5 form factor, and automatic trigger reset. Point, shoot, and the target registers the hit. The cleanest setup for handgun training on the Strike Arena platform.",
     category: "Training Handguns",
     sku: "RETP-UG17-GEN5IR",
-    price: 47000,
+    price: 470,
     images: [
       "/images/la-glock-17/main.png",
       "/images/la-glock-17/angle.png",
@@ -290,7 +292,7 @@ const PRODUCTS: SeedProduct[] = [
       "Same built-in IR laser and gas recoil system as the Glock 17 model, in the compact Glock 19 Gen 5 form factor. Ideal if you carry or compete with a compact frame and want your training reps to match your real firearm's size and balance.",
     category: "Training Handguns",
     sku: "RETP-UG19-GEN5IR",
-    price: 47000,
+    price: 470,
     images: [
       "/images/la-glock-19/main.png",
       "/images/la-glock-19/angle.png",
@@ -306,7 +308,7 @@ const PRODUCTS: SeedProduct[] = [
       "Premium training pistol with a built-in IR laser on the Glock 45 platform. Gas recoil, automatic trigger reset, and the full-size frame preferred by law enforcement and duty carry. Train draws, reloads, and transitions with the same grip and controls as your service weapon.",
     category: "Training Handguns",
     sku: "RETP-UG45-GG-IR",
-    price: 47000,
+    price: 470,
     images: [
       "/images/la-glock-45/main.png",
       "/images/la-glock-45/angle.png",
@@ -322,7 +324,7 @@ const PRODUCTS: SeedProduct[] = [
       "Full-size Sig P320/M17 training pistol with built-in IR laser. Gas recoil, automatic trigger reset, and no separate laser attachment required. Train draws, reloads, and transitions with the same grip angle and controls as your duty or carry weapon.",
     category: "Training Handguns",
     sku: "RETP-SIG-M17-IR",
-    price: 48000,
+    price: 480,
     images: [
       "/images/la-sig-m17/main.png",
       "/images/la-sig-m17/angle.png",
@@ -338,7 +340,7 @@ const PRODUCTS: SeedProduct[] = [
       "Compact Sig P320 XCarry/M18 form factor with built-in IR laser and gas recoil. Same training capability as the full-size M17 model in a shorter, lighter frame. Match your training tool to your carry gun.",
     category: "Training Handguns",
     sku: "RETP-XCARRY-IR",
-    price: 48000,
+    price: 480,
     images: [
       "/images/la-sig-m18/main.png",
       "/images/la-sig-m18/angle.png",
@@ -353,7 +355,7 @@ const PRODUCTS: SeedProduct[] = [
       "Competition-grade CZ Shadow 2 training pistol with built-in IR laser. Gas recoil and the Shadow 2's distinctive trigger feel. Train your competition draws, transitions, and stage plans on Strike Arena targets without burning a single round of match ammo.",
     category: "Training Handguns",
     sku: "RETP-CZS-IR",
-    price: 48000,
+    price: 480,
     images: [
       "/images/la-cz-shadow-2/main.png",
       "/images/la-cz-shadow-2/side.png",
@@ -369,7 +371,7 @@ const PRODUCTS: SeedProduct[] = [
       "AW Custom 2011 MK platform with built-in IR laser and gas recoil. The 2011 grip angle and trigger feel for competition shooters who want their dry fire reps to transfer directly to match day.",
     category: "Training Handguns",
     sku: "RETP-AW2011MK-IR",
-    price: 47000,
+    price: 470,
     images: [
       "/images/la-2011-mk/main.png",
       "/images/la-2011-mk/side.png",
@@ -386,7 +388,7 @@ const PRODUCTS: SeedProduct[] = [
       "Electric recoil training rifle on the AR-15 platform. The ETU (Electronic Trigger Unit) provides a consistent trigger pull with recoil simulation. Requires a Laser Ammo Flash Kit (sold separately) for IR laser capability. Train rifle-to-pistol transitions, room clearing, and carbine drills on Strike Arena targets.",
     category: "Training Rifles",
     sku: "106-01410-ETU",
-    price: 47000,
+    price: 470,
     images: [
       "/images/kwa-ronin-t10/left-1.png",
       "/images/kwa-ronin-t10/right-1.png",
@@ -404,7 +406,7 @@ const PRODUCTS: SeedProduct[] = [
       "KWA ATP-GT training pistol (Glock 17 platform) bundled with a Laser Ammo Spider Kit. Gas blowback, automatic trigger reset, and IR laser -- everything you need to add recoil handgun training to your Strike Arena setup. One box, ready to train.",
     category: "Training Kits",
     sku: "SA.101.01",
-    price: 39000,
+    price: 390,
     images: [
       "/images/kit-starter-handgun-glock/combined.png",
       "/images/kwa-atp-gt/left-1.png",
@@ -422,7 +424,7 @@ const PRODUCTS: SeedProduct[] = [
       "KWA ATP-Z training pistol (Sig P320 platform) bundled with a Laser Ammo Spider Kit. Gas blowback, automatic trigger reset, and IR laser -- everything you need to add recoil handgun training to your Strike Arena setup. One box, ready to train.",
     category: "Training Kits",
     sku: "SA.100.01",
-    price: 39000,
+    price: 390,
     images: [
       "/images/kit-starter-handgun-sig/combined.png",
       "/images/kwa-atp-z/left-1.png",
@@ -440,7 +442,7 @@ const PRODUCTS: SeedProduct[] = [
       "KWA Ronin T10 AR-15 bundled with a Laser Ammo Flash Kit. Electric recoil, IR laser, and everything you need for rifle training on Strike Arena targets. Add carbine drills, rifle-to-pistol transitions, and long-gun stages to your training program.",
     category: "Training Kits",
     sku: "SA.102.01",
-    price: 67000,
+    price: 670,
     images: [
       "/images/kit-starter-rifle-ar15/combined.png",
       "/images/kit-starter-rifle-ar15/flash-kit.png",
@@ -860,8 +862,8 @@ export default async function seedDemoData({ container }: ExecArgs) {
         sku: p.sku,
         options: { Default: "Default" },
         prices: [{ amount: p.price, currency_code: "usd" }],
-        ...(p.msrpCents != null
-          ? { metadata: { msrp_cents: p.msrpCents } }
+        ...(p.msrpAmount != null
+          ? { metadata: { msrp_amount: p.msrpAmount } }
           : {}),
         ...extraVariantFields,
       },
