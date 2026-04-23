@@ -76,33 +76,19 @@ export default async function procurementFulfillmentSync({
   );
   if (fulfillmentItems.length === 0) return;
 
-  // Resolve inventory_item_id for each fulfilled line item via the
-  // order's line items → variant → inventory_item link.
-  let orderRows: Array<{
-    id: string;
-    items?: Array<{
-      id: string;
-      variant_id: string | null;
-      product_variant?: {
-        id: string;
-        inventory_items?: Array<{ inventory?: { id: string } }>;
-      };
-    }>;
-  }> = [];
-
+  // Resolve inventory_item_id for each fulfilled line item. Medusa v2's
+  // cross-module graph from order.items → product.variant → inventory
+  // is brittle on certain paths, so do it in two steps:
+  //   1) Load order items with their variant_id.
+  //   2) Separately query the variants for their inventory_items.
+  let orderItems: Array<{ id: string; variant_id: string | null }> = [];
   try {
     const { data: rows } = await query.graph({
       entity: "order",
-      fields: [
-        "id",
-        "items.id",
-        "items.variant_id",
-        "items.product_variant.id",
-        "items.product_variant.inventory_items.inventory.id",
-      ],
+      fields: ["id", "items.id", "items.variant_id"],
       filters: { id: data.order_id } as never,
     });
-    orderRows = rows as typeof orderRows;
+    orderItems = ((rows[0] as { items?: typeof orderItems })?.items ?? []) as typeof orderItems;
   } catch (err) {
     logger.error(
       `[procurement-fulfillment-sync] failed to load order ${data.order_id}: ${(err as Error).message}`,
@@ -110,12 +96,41 @@ export default async function procurementFulfillmentSync({
     return;
   }
 
-  const order = orderRows[0];
-  if (!order) return;
+  const variantIds = [
+    ...new Set(
+      orderItems
+        .map((oi) => oi.variant_id)
+        .filter((v): v is string => !!v),
+    ),
+  ];
+
+  const invItemByVariant = new Map<string, string>();
+  if (variantIds.length > 0) {
+    try {
+      const { data: variants } = await query.graph({
+        entity: "product_variant",
+        fields: ["id", "inventory_items.inventory.id"],
+        filters: { id: variantIds } as never,
+      });
+      for (const v of variants as Array<{
+        id: string;
+        inventory_items?: Array<{ inventory?: { id: string } }>;
+      }>) {
+        const invId = v.inventory_items?.[0]?.inventory?.id;
+        if (invId) invItemByVariant.set(v.id, invId);
+      }
+    } catch (err) {
+      logger.error(
+        `[procurement-fulfillment-sync] failed to load variants: ${(err as Error).message}`,
+      );
+      return;
+    }
+  }
 
   const invItemByLineItem = new Map<string, string>();
-  for (const oi of order.items ?? []) {
-    const invId = oi.product_variant?.inventory_items?.[0]?.inventory?.id;
+  for (const oi of orderItems) {
+    if (!oi.variant_id) continue;
+    const invId = invItemByVariant.get(oi.variant_id);
     if (invId) invItemByLineItem.set(oi.id, invId);
   }
 

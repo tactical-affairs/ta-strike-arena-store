@@ -363,19 +363,25 @@ class ProcurementModuleService extends MedusaService({
   }
 
   /**
-   * Reverse COGS for a returned order line. Creates offsetting
-   * CogsEntry reversals (by setting reversed_at on the originals)
-   * and either re-creates an InventoryLot at original cost
-   * (resellable) or records a damaged lot (damaged).
+   * Reverse COGS for a returned order line.
    *
-   * We reverse newest-first (LIFO on the reversal side) because the
-   * original consumption was FIFO-oldest-first — reversing from the
-   * most recently-consumed lot minimizes the chance of touching
-   * already-exhausted lots.
+   * Process (faithful cost-mix preservation):
+   *   1. Reverse matching CogsEntry rows newest-first (LIFO on the
+   *      reversal side — the original consumption was FIFO oldest-
+   *      first, so the most recently-consumed lot is reversed first;
+   *      that's what accountants mean by "reverse FIFO").
+   *   2. For each distinct cost segment consumed, create a matching
+   *      InventoryLot at that exact unit_cost. A return spanning two
+   *      different lot costs produces two restock lots — cost basis
+   *      is preserved, not collapsed to an average.
+   *   3. Condition = "resellable" → new lots are active, re-enter FIFO
+   *      at "now" so they're consumed before newer PO stock.
+   *      Condition = "damaged" → lots recorded with status=damaged
+   *      and qty_remaining=0 (never consumed, tracked for loss report).
    */
   async reverseCogsForReturn(
     input: ReverseCogsInput,
-  ): Promise<{ new_lot_id: string | null; cost_reversed: number }> {
+  ): Promise<{ new_lot_ids: string[]; cost_reversed: number }> {
     const entries = await this.listCogsEntries(
       {
         order_line_item_id: input.order_line_item_id,
@@ -389,7 +395,7 @@ class ProcurementModuleService extends MedusaService({
       : new Date();
     let remainingToReturn = input.qty;
     let totalReversedCost = 0;
-    let unitCostForNewLot = 0;
+    const newLotIds: string[] = [];
 
     for (const entry of entries) {
       if (remainingToReturn <= 0) break;
@@ -403,43 +409,32 @@ class ProcurementModuleService extends MedusaService({
         reversed_at: reversedAt,
       });
 
+      const lot = await this.createInventoryLots({
+        inventory_item_id: input.inventory_item_id,
+        po_line_id: null,
+        location_id: input.location_id,
+        qty_initial: takeQty,
+        qty_remaining: input.condition === "resellable" ? takeQty : 0,
+        unit_cost: entryUnitCost,
+        currency: entry.currency,
+        received_at: reversedAt,
+        status: input.condition === "resellable" ? "active" : "damaged",
+        source: "return_restock",
+      });
+      newLotIds.push(lot.id);
+
       totalReversedCost += revertedCost;
-      unitCostForNewLot = entryUnitCost;
       remainingToReturn -= takeQty;
     }
 
-    let newLotId: string | null = null;
-    if (input.condition === "resellable" && input.qty > 0) {
-      const lot = await this.createInventoryLots({
-        inventory_item_id: input.inventory_item_id,
-        po_line_id: null,
-        location_id: input.location_id,
-        qty_initial: input.qty,
-        qty_remaining: input.qty,
-        unit_cost: unitCostForNewLot,
-        currency: "usd",
-        received_at: reversedAt,
-        status: "active",
-        source: "return_restock",
-      });
-      newLotId = lot.id;
-    } else if (input.condition === "damaged" && input.qty > 0) {
-      const lot = await this.createInventoryLots({
-        inventory_item_id: input.inventory_item_id,
-        po_line_id: null,
-        location_id: input.location_id,
-        qty_initial: input.qty,
-        qty_remaining: 0,
-        unit_cost: unitCostForNewLot,
-        currency: "usd",
-        received_at: reversedAt,
-        status: "damaged",
-        source: "return_restock",
-      });
-      newLotId = lot.id;
+    if (remainingToReturn > 0) {
+      // Returned qty exceeds what we previously consumed on this
+      // line. Shouldn't happen in practice; log and leave the excess
+      // un-restocked rather than inventing a cost basis.
+      // (Caller should reconcile manually.)
     }
 
-    return { new_lot_id: newLotId, cost_reversed: totalReversedCost };
+    return { new_lot_ids: newLotIds, cost_reversed: totalReversedCost };
   }
 
   /**

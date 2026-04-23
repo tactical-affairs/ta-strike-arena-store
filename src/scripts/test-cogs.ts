@@ -83,7 +83,7 @@ export default async function testCogs({ container }: ExecArgs) {
     condition: "resellable",
   });
   logger.info(
-    `[test-cogs] Reversed. cost_reversed=$${reverseResult.cost_reversed.toFixed(2)} new_lot_id=${reverseResult.new_lot_id}`,
+    `[test-cogs] Reversed. cost_reversed=$${reverseResult.cost_reversed.toFixed(2)} new_lots=[${reverseResult.new_lot_ids.join(",")}]`,
   );
 
   const final = await procurement.listInventoryLots(

@@ -99,29 +99,16 @@ export default async function procurementReturnSync({
   );
   if (returnItems.length === 0) return;
 
-  // Resolve inventory_item_id for each returned line item via the
-  // order's line item → variant → inventory_item link.
-  let orderRows: Array<{
-    id: string;
-    items?: Array<{
-      id: string;
-      product_variant?: {
-        inventory_items?: Array<{ inventory?: { id: string } }>;
-      };
-    }>;
-  }> = [];
-
+  // Resolve inventory_item_id via variant_id (two-step for cross-
+  // module graph reliability — same pattern as fulfillment-sync).
+  let orderItems: Array<{ id: string; variant_id: string | null }> = [];
   try {
     const { data: rows } = await query.graph({
       entity: "order",
-      fields: [
-        "id",
-        "items.id",
-        "items.product_variant.inventory_items.inventory.id",
-      ],
+      fields: ["id", "items.id", "items.variant_id"],
       filters: { id: orderId } as never,
     });
-    orderRows = rows as typeof orderRows;
+    orderItems = ((rows[0] as { items?: typeof orderItems })?.items ?? []) as typeof orderItems;
   } catch (err) {
     logger.error(
       `[procurement-return-sync] failed to load order ${orderId}: ${(err as Error).message}`,
@@ -129,12 +116,41 @@ export default async function procurementReturnSync({
     return;
   }
 
-  const order = orderRows[0];
-  if (!order) return;
+  const variantIds = [
+    ...new Set(
+      orderItems
+        .map((oi) => oi.variant_id)
+        .filter((v): v is string => !!v),
+    ),
+  ];
+
+  const invItemByVariant = new Map<string, string>();
+  if (variantIds.length > 0) {
+    try {
+      const { data: variants } = await query.graph({
+        entity: "product_variant",
+        fields: ["id", "inventory_items.inventory.id"],
+        filters: { id: variantIds } as never,
+      });
+      for (const v of variants as Array<{
+        id: string;
+        inventory_items?: Array<{ inventory?: { id: string } }>;
+      }>) {
+        const invId = v.inventory_items?.[0]?.inventory?.id;
+        if (invId) invItemByVariant.set(v.id, invId);
+      }
+    } catch (err) {
+      logger.error(
+        `[procurement-return-sync] failed to load variants: ${(err as Error).message}`,
+      );
+      return;
+    }
+  }
 
   const invItemByLineItem = new Map<string, string>();
-  for (const oi of order.items ?? []) {
-    const invId = oi.product_variant?.inventory_items?.[0]?.inventory?.id;
+  for (const oi of orderItems) {
+    if (!oi.variant_id) continue;
+    const invId = invItemByVariant.get(oi.variant_id);
     if (invId) invItemByLineItem.set(oi.id, invId);
   }
 
@@ -184,7 +200,7 @@ export default async function procurementReturnSync({
         condition,
       });
       logger.info(
-        `[procurement-return-sync] return ${returnId} line ${ri.item_id} condition=${condition} qty=${qty} cost_reversed=$${res.cost_reversed.toFixed(2)} new_lot=${res.new_lot_id ?? "none"}`,
+        `[procurement-return-sync] return ${returnId} line ${ri.item_id} condition=${condition} qty=${qty} cost_reversed=$${res.cost_reversed.toFixed(2)} new_lots=[${res.new_lot_ids.join(",")}]`,
       );
     } catch (err) {
       logger.error(
