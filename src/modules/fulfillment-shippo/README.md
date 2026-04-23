@@ -29,11 +29,16 @@ live from Shippo's `/shipments/` endpoint per cart.
 
 ## Bundle handling
 
-Bundle SKUs (e.g. Pro Plus Package = 5× Pro Target + 1× Training Console)
-pass through to their components at rate-calc time. The provider uses
-Medusa's inventory kit relation (`variant.inventory_items[]` with
-`required_quantity` + `inventory.weight/length/width/height`) to expand
-each bundle into its physical units.
+Bundle SKUs ship as **a single box**. At seed time, each bundle's
+variant gets `weight = sum of component weights × required_quantity`
+and box dims = max of each component dim. Example: Pro Plus Package
+(5× Pro Target + 1× Training Console) → weight in oz = 5× Pro Target
+weight + 1× Console weight; box L/W/H = the biggest L/W/H seen across
+the components. That gives us one parcel quote per bundle cart line.
+
+The provider reads `weight/length/width/height` directly off each cart
+item's nested `variant` — it does not need cross-module query access
+to expand bundles at rate-calc time.
 
 ## Parcel packing
 
@@ -43,6 +48,21 @@ the strictest carrier limits (USPS 70 lb, 130" length+girth).
 
 Packing at rate-calc time is an estimate. Admins can override parcels at
 label-purchase time by re-creating the fulfillment with custom dims.
+
+## Rate caching
+
+`calculatePrice` caches the Shippo shipment response for 5 minutes,
+keyed by `cart_id + items + shipping address`. Benefits:
+
+- Medusa invokes `calculatePrice` once per enabled shipping option
+  (6x per cart refresh) — one cached shipment serves all six lookups.
+- Sandbox responses are non-deterministic; caching stabilises the
+  quote between the storefront's `/calculate` call and Medusa's
+  re-invocation during `addShippingMethod`.
+
+Only non-empty responses are cached (so a partial sandbox response
+doesn't poison subsequent lookups). `createFulfillment` always hits
+Shippo fresh since rate IDs expire.
 
 ## Env vars
 
