@@ -23,6 +23,13 @@ type Line = {
   currency: string;
 };
 
+type Adjustment = {
+  id: string;
+  type: "shipping" | "discount" | "tariff" | "other";
+  amount: string | number;
+  notes: string | null;
+};
+
 type PurchaseOrder = {
   id: string;
   po_number: string;
@@ -32,7 +39,10 @@ type PurchaseOrder = {
   notes: string | null;
   supplier: { id: string; name: string } | null;
   lines: Line[];
+  adjustments: Adjustment[];
 };
+
+type LandedCosts = Record<string, { landed_unit_cost: number; allocated: number }>;
 
 type Location = { id: string; name: string };
 
@@ -47,8 +57,15 @@ const STATUS_COLORS: Record<string, "grey" | "blue" | "orange" | "green" | "red"
 const PurchaseOrderDetailPage = () => {
   const { id } = useParams<{ id: string }>();
   const [po, setPo] = useState<PurchaseOrder | null>(null);
+  const [landedCosts, setLandedCosts] = useState<LandedCosts>({});
   const [loading, setLoading] = useState(true);
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [newAdj, setNewAdj] = useState<{
+    type: Adjustment["type"];
+    amount: string;
+    notes: string;
+  }>({ type: "shipping", amount: "", notes: "" });
+  const [adjBusy, setAdjBusy] = useState(false);
 
   const load = async () => {
     if (!id) return;
@@ -59,9 +76,46 @@ const PurchaseOrderDetailPage = () => {
       });
       const data = await res.json();
       setPo(data.purchase_order ?? null);
+      setLandedCosts(data.landed_costs ?? {});
     } finally {
       setLoading(false);
     }
+  };
+
+  const addAdjustment = async () => {
+    if (!id) return;
+    const amt = parseFloat(newAdj.amount);
+    if (!Number.isFinite(amt) || amt === 0) return;
+    const signed = newAdj.type === "discount" ? -Math.abs(amt) : amt;
+    setAdjBusy(true);
+    try {
+      await fetch(
+        `/admin/procurement/purchase-orders/${id}/adjustments`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: newAdj.type,
+            amount: signed,
+            notes: newAdj.notes || undefined,
+          }),
+        },
+      );
+      setNewAdj({ type: "shipping", amount: "", notes: "" });
+      await load();
+    } finally {
+      setAdjBusy(false);
+    }
+  };
+
+  const removeAdjustment = async (adjustmentId: string) => {
+    if (!id) return;
+    await fetch(
+      `/admin/procurement/purchase-orders/${id}/adjustments?adjustment_id=${adjustmentId}`,
+      { method: "DELETE", credentials: "include" },
+    );
+    await load();
   };
 
   useEffect(() => {
@@ -115,27 +169,46 @@ const PurchaseOrderDetailPage = () => {
             <Table.HeaderCell>Ordered</Table.HeaderCell>
             <Table.HeaderCell>Received</Table.HeaderCell>
             <Table.HeaderCell>Unit cost</Table.HeaderCell>
+            <Table.HeaderCell>Landed unit cost</Table.HeaderCell>
             <Table.HeaderCell>Line total</Table.HeaderCell>
           </Table.Row>
         </Table.Header>
         <Table.Body>
-          {po.lines.map((l) => (
-            <Table.Row key={l.id}>
-              <Table.Cell className="font-mono text-ui-fg-subtle text-xs">
-                {l.variant_id}
-              </Table.Cell>
-              <Table.Cell>{l.qty_ordered}</Table.Cell>
-              <Table.Cell>
-                {l.qty_received}
-                {l.qty_received >= l.qty_ordered ? " ✓" : ""}
-              </Table.Cell>
-              <Table.Cell>${Number(l.unit_cost).toFixed(2)}</Table.Cell>
-              <Table.Cell>
-                ${(l.qty_ordered * Number(l.unit_cost)).toFixed(2)}
-              </Table.Cell>
-            </Table.Row>
-          ))}
+          {po.lines.map((l) => {
+            const landed = landedCosts[l.id];
+            const landedCost = landed?.landed_unit_cost ?? Number(l.unit_cost);
+            const delta = landedCost - Number(l.unit_cost);
+            return (
+              <Table.Row key={l.id}>
+                <Table.Cell className="font-mono text-ui-fg-subtle text-xs">
+                  {l.variant_id}
+                </Table.Cell>
+                <Table.Cell>{l.qty_ordered}</Table.Cell>
+                <Table.Cell>
+                  {l.qty_received}
+                  {l.qty_received >= l.qty_ordered ? " ✓" : ""}
+                </Table.Cell>
+                <Table.Cell>${Number(l.unit_cost).toFixed(2)}</Table.Cell>
+                <Table.Cell>
+                  <span className={delta !== 0 ? "font-medium" : ""}>
+                    ${landedCost.toFixed(2)}
+                  </span>
+                  {delta !== 0 && (
+                    <span
+                      className={`ml-1 text-xs ${delta > 0 ? "text-ui-fg-subtle" : "text-ui-fg-interactive"}`}
+                    >
+                      ({delta > 0 ? "+" : ""}${delta.toFixed(2)})
+                    </span>
+                  )}
+                </Table.Cell>
+                <Table.Cell>
+                  ${(l.qty_ordered * Number(l.unit_cost)).toFixed(2)}
+                </Table.Cell>
+              </Table.Row>
+            );
+          })}
           <Table.Row>
+            <Table.Cell></Table.Cell>
             <Table.Cell></Table.Cell>
             <Table.Cell></Table.Cell>
             <Table.Cell></Table.Cell>
@@ -146,6 +219,104 @@ const PurchaseOrderDetailPage = () => {
           </Table.Row>
         </Table.Body>
       </Table>
+
+      {/* Adjustments */}
+      <div className="px-6 py-4 border-t space-y-3">
+        <div>
+          <Label>Adjustments (shipping, discount, tariff, other)</Label>
+          <Text size="small" className="text-ui-fg-subtle">
+            Allocated across lines by extended value and baked into the landed unit cost.
+            Edits only affect lots received after the change — earlier lots keep their original cost.
+          </Text>
+        </div>
+        {po.adjustments?.length > 0 && (
+          <Table>
+            <Table.Header>
+              <Table.Row>
+                <Table.HeaderCell>Type</Table.HeaderCell>
+                <Table.HeaderCell>Amount</Table.HeaderCell>
+                <Table.HeaderCell>Notes</Table.HeaderCell>
+                <Table.HeaderCell></Table.HeaderCell>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {po.adjustments.map((a) => {
+                const amt = Number(a.amount);
+                return (
+                  <Table.Row key={a.id}>
+                    <Table.Cell className="capitalize">{a.type}</Table.Cell>
+                    <Table.Cell className={amt < 0 ? "text-ui-fg-error" : ""}>
+                      {amt < 0 ? "−" : ""}${Math.abs(amt).toFixed(2)}
+                    </Table.Cell>
+                    <Table.Cell>{a.notes || "—"}</Table.Cell>
+                    <Table.Cell>
+                      <Button
+                        variant="transparent"
+                        size="small"
+                        onClick={() => removeAdjustment(a.id)}
+                      >
+                        ×
+                      </Button>
+                    </Table.Cell>
+                  </Table.Row>
+                );
+              })}
+            </Table.Body>
+          </Table>
+        )}
+        <div className="grid grid-cols-12 gap-2 items-end">
+          <div className="col-span-3">
+            <Select
+              value={newAdj.type}
+              onValueChange={(v) =>
+                setNewAdj({ ...newAdj, type: v as Adjustment["type"] })
+              }
+            >
+              <Select.Trigger>
+                <Select.Value />
+              </Select.Trigger>
+              <Select.Content>
+                <Select.Item value="shipping">Shipping</Select.Item>
+                <Select.Item value="discount">Discount</Select.Item>
+                <Select.Item value="tariff">Tariff / duty</Select.Item>
+                <Select.Item value="other">Other</Select.Item>
+              </Select.Content>
+            </Select>
+          </div>
+          <div className="col-span-3">
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Amount"
+              value={newAdj.amount}
+              onChange={(e) =>
+                setNewAdj({ ...newAdj, amount: e.target.value })
+              }
+            />
+          </div>
+          <div className="col-span-5">
+            <Input
+              placeholder="Notes (optional)"
+              value={newAdj.notes}
+              onChange={(e) =>
+                setNewAdj({ ...newAdj, notes: e.target.value })
+              }
+            />
+          </div>
+          <div className="col-span-1">
+            <Button
+              type="button"
+              size="small"
+              variant="secondary"
+              onClick={addAdjustment}
+              disabled={!newAdj.amount || adjBusy}
+            >
+              {adjBusy ? "…" : "Add"}
+            </Button>
+          </div>
+        </div>
+      </div>
 
       {po.notes && (
         <div className="px-6 py-4 border-t">

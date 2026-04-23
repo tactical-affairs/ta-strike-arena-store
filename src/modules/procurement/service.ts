@@ -14,6 +14,7 @@ import { MedusaError } from "@medusajs/framework/utils";
 import { Supplier } from "./models/supplier";
 import { PurchaseOrder } from "./models/purchase-order";
 import { PurchaseOrderLine } from "./models/purchase-order-line";
+import { PoAdjustment } from "./models/po-adjustment";
 import { InventoryLot } from "./models/inventory-lot";
 import { CogsEntry } from "./models/cogs-entry";
 
@@ -29,6 +30,11 @@ export type CreatePurchaseOrderInput = {
     qty_ordered: number;
     unit_cost: number;
     currency?: string;
+  }>;
+  adjustments?: Array<{
+    type: "shipping" | "discount" | "tariff" | "other";
+    amount: number;
+    notes?: string;
   }>;
 };
 
@@ -76,6 +82,7 @@ class ProcurementModuleService extends MedusaService({
   Supplier,
   PurchaseOrder,
   PurchaseOrderLine,
+  PoAdjustment,
   InventoryLot,
   CogsEntry,
 }) {
@@ -120,7 +127,74 @@ class ProcurementModuleService extends MedusaService({
       })),
     );
 
+    if (input.adjustments?.length) {
+      await this.createPoAdjustments(
+        input.adjustments.map((a) => ({
+          purchase_order_id: po.id,
+          type: a.type,
+          amount: a.amount,
+          notes: a.notes ?? null,
+        })),
+      );
+    }
+
     return { id: po.id };
+  }
+
+  /**
+   * Compute landed unit costs for each line on a PO by allocating
+   * PO-level adjustments (shipping, discount, tariff, other) across
+   * the lines by extended value (qty_ordered × unit_cost) — GAAP-
+   * standard approach.
+   *
+   * Returns `{ landed_unit_cost, allocated_adjustment_total }` per
+   * line id. Discounts are negative and reduce landed cost; other
+   * types are positive.
+   */
+  async computeLandedUnitCosts(
+    purchase_order_id: string,
+  ): Promise<
+    Record<string, { landed_unit_cost: number; allocated: number }>
+  > {
+    const po = await this.retrievePurchaseOrder(purchase_order_id, {
+      relations: ["lines", "adjustments"],
+    });
+
+    const adjustmentTotal = (po.adjustments ?? []).reduce(
+      (sum: number, a: { amount: unknown }) => sum + Number(a.amount),
+      0,
+    );
+
+    const totalExtendedValue = (po.lines ?? []).reduce(
+      (sum: number, l: { qty_ordered: number; unit_cost: unknown }) =>
+        sum + l.qty_ordered * Number(l.unit_cost),
+      0,
+    );
+
+    const result: Record<
+      string,
+      { landed_unit_cost: number; allocated: number }
+    > = {};
+
+    for (const line of po.lines ?? []) {
+      const lineExtendedValue =
+        line.qty_ordered * Number(line.unit_cost);
+      const share =
+        totalExtendedValue > 0
+          ? lineExtendedValue / totalExtendedValue
+          : 0;
+      const allocated = share * adjustmentTotal;
+      const landedUnitCost =
+        line.qty_ordered > 0
+          ? Number(line.unit_cost) + allocated / line.qty_ordered
+          : Number(line.unit_cost);
+      result[line.id] = {
+        landed_unit_cost: landedUnitCost,
+        allocated,
+      };
+    }
+
+    return result;
   }
 
   /**
@@ -150,6 +224,10 @@ class ProcurementModuleService extends MedusaService({
       : new Date();
     const lotsCreated: string[] = [];
 
+    // Compute landed unit cost per line (allocates PO-level
+    // adjustments — shipping, tariffs, discounts — by extended value).
+    const landedCosts = await this.computeLandedUnitCosts(po.id);
+
     for (const rcv of input.lines) {
       if (rcv.qty_received <= 0) continue;
 
@@ -169,13 +247,15 @@ class ProcurementModuleService extends MedusaService({
         );
       }
 
+      const landed = landedCosts[line.id]?.landed_unit_cost ?? Number(line.unit_cost);
+
       const lot = await this.createInventoryLots({
         inventory_item_id: rcv.inventory_item_id,
         po_line_id: line.id,
         location_id: input.location_id,
         qty_initial: rcv.qty_received,
         qty_remaining: rcv.qty_received,
-        unit_cost: Number(line.unit_cost),
+        unit_cost: landed,
         currency: line.currency,
         received_at: receivedAt,
         status: "active",

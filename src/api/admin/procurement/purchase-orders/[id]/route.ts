@@ -14,7 +14,8 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   ) as ProcurementModuleService;
   const { id } = req.params as { id: string };
   const purchase_order = await service.retrievePurchaseOrder(id, {
-    relations: ["lines", "supplier"],
+    relations: ["lines", "supplier", "adjustments"],
   });
-  res.json({ purchase_order });
+  const landed_costs = await service.computeLandedUnitCosts(id);
+  res.json({ purchase_order, landed_costs });
 };

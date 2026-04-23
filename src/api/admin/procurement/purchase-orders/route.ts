@@ -17,7 +17,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const purchase_orders = await service.listPurchaseOrders(
     {},
     {
-      relations: ["lines", "supplier"],
+      relations: ["lines", "supplier", "adjustments"],
       order: { ordered_at: "DESC" },
     },
   );
@@ -49,7 +49,7 @@ export const POST = async (
     created_by: body.created_by,
   });
   const purchase_order = await service.retrievePurchaseOrder(id, {
-    relations: ["lines", "supplier"],
+    relations: ["lines", "supplier", "adjustments"],
   });
   res.json({ purchase_order });
 };

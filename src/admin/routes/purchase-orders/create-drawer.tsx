@@ -25,6 +25,12 @@ type Line = {
   unit_cost: number;
 };
 
+type Adjustment = {
+  type: "shipping" | "discount" | "tariff" | "other";
+  amount: number;
+  notes: string;
+};
+
 export function CreatePurchaseOrderDrawer({
   open,
   onClose,
@@ -44,6 +50,16 @@ export function CreatePurchaseOrderDrawer({
     variant_id: "",
     qty: "",
     unit_cost: "",
+  });
+  const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
+  const [newAdj, setNewAdj] = useState<{
+    type: Adjustment["type"];
+    amount: string;
+    notes: string;
+  }>({
+    type: "shipping",
+    amount: "",
+    notes: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +114,26 @@ export function CreatePurchaseOrderDrawer({
     setLines(lines.filter((_, i) => i !== idx));
   };
 
+  const addAdjustment = () => {
+    const amt = parseFloat(newAdj.amount);
+    if (!Number.isFinite(amt) || amt === 0) return;
+    // Discounts are stored negative; the UI shows a positive value and flips.
+    const signed = newAdj.type === "discount" ? -Math.abs(amt) : amt;
+    setAdjustments([
+      ...adjustments,
+      {
+        type: newAdj.type,
+        amount: signed,
+        notes: newAdj.notes,
+      },
+    ]);
+    setNewAdj({ type: "shipping", amount: "", notes: "" });
+  };
+
+  const removeAdjustment = (idx: number) => {
+    setAdjustments(adjustments.filter((_, i) => i !== idx));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supplierId || lines.length === 0) return;
@@ -118,6 +154,13 @@ export function CreatePurchaseOrderDrawer({
             qty_ordered: l.qty_ordered,
             unit_cost: l.unit_cost,
           })),
+          adjustments: adjustments.length
+            ? adjustments.map((a) => ({
+                type: a.type,
+                amount: a.amount,
+                notes: a.notes || undefined,
+              }))
+            : undefined,
         }),
       });
       if (!res.ok) {
@@ -128,6 +171,7 @@ export function CreatePurchaseOrderDrawer({
       setExpectedAt("");
       setNotes("");
       setLines([]);
+      setAdjustments([]);
       onCreated();
     } catch (err) {
       setError((err as Error).message);
@@ -136,7 +180,9 @@ export function CreatePurchaseOrderDrawer({
     }
   };
 
-  const total = lines.reduce((s, l) => s + l.qty_ordered * l.unit_cost, 0);
+  const lineTotal = lines.reduce((s, l) => s + l.qty_ordered * l.unit_cost, 0);
+  const adjustmentTotal = adjustments.reduce((s, a) => s + a.amount, 0);
+  const total = lineTotal + adjustmentTotal;
 
   return (
     <Drawer open={open} onOpenChange={onClose}>
@@ -277,10 +323,130 @@ export function CreatePurchaseOrderDrawer({
               </div>
             </div>
 
+            <div className="border-t pt-4 space-y-2">
+              <Label>Adjustments (shipping, discounts, tariffs)</Label>
+              <Text size="small" className="text-ui-fg-subtle">
+                Adjustments are allocated across lines by extended value
+                and baked into each lot's landed cost. Discounts reduce cost.
+              </Text>
+              {adjustments.length > 0 && (
+                <Table>
+                  <Table.Header>
+                    <Table.Row>
+                      <Table.HeaderCell>Type</Table.HeaderCell>
+                      <Table.HeaderCell>Amount</Table.HeaderCell>
+                      <Table.HeaderCell>Notes</Table.HeaderCell>
+                      <Table.HeaderCell></Table.HeaderCell>
+                    </Table.Row>
+                  </Table.Header>
+                  <Table.Body>
+                    {adjustments.map((a, i) => (
+                      <Table.Row key={i}>
+                        <Table.Cell className="capitalize">{a.type}</Table.Cell>
+                        <Table.Cell
+                          className={
+                            a.amount < 0 ? "text-ui-fg-error" : ""
+                          }
+                        >
+                          {a.amount < 0 ? "−" : ""}$
+                          {Math.abs(a.amount).toFixed(2)}
+                        </Table.Cell>
+                        <Table.Cell>{a.notes || "—"}</Table.Cell>
+                        <Table.Cell>
+                          <Button
+                            variant="transparent"
+                            size="small"
+                            onClick={() => removeAdjustment(i)}
+                            type="button"
+                          >
+                            ×
+                          </Button>
+                        </Table.Cell>
+                      </Table.Row>
+                    ))}
+                  </Table.Body>
+                </Table>
+              )}
+              <div className="grid grid-cols-12 gap-2 items-end pt-2">
+                <div className="col-span-3">
+                  <Select
+                    value={newAdj.type}
+                    onValueChange={(v) =>
+                      setNewAdj({ ...newAdj, type: v as Adjustment["type"] })
+                    }
+                  >
+                    <Select.Trigger>
+                      <Select.Value />
+                    </Select.Trigger>
+                    <Select.Content>
+                      <Select.Item value="shipping">Shipping</Select.Item>
+                      <Select.Item value="discount">Discount</Select.Item>
+                      <Select.Item value="tariff">Tariff / duty</Select.Item>
+                      <Select.Item value="other">Other</Select.Item>
+                    </Select.Content>
+                  </Select>
+                </div>
+                <div className="col-span-3">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Amount"
+                    value={newAdj.amount}
+                    onChange={(e) =>
+                      setNewAdj({ ...newAdj, amount: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="col-span-5">
+                  <Input
+                    placeholder="Notes (optional)"
+                    value={newAdj.notes}
+                    onChange={(e) =>
+                      setNewAdj({ ...newAdj, notes: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="col-span-1">
+                  <Button
+                    type="button"
+                    size="small"
+                    variant="secondary"
+                    onClick={addAdjustment}
+                    disabled={!newAdj.amount}
+                  >
+                    Add
+                  </Button>
+                </div>
+              </div>
+            </div>
+
             {lines.length > 0 && (
-              <div className="flex justify-between pt-2 border-t">
-                <Text className="font-medium">PO total</Text>
-                <Text className="font-mono">${total.toFixed(2)}</Text>
+              <div className="space-y-1 pt-2 border-t">
+                <div className="flex justify-between text-ui-fg-subtle">
+                  <Text size="small">Lines subtotal</Text>
+                  <Text size="small" className="font-mono">
+                    ${lineTotal.toFixed(2)}
+                  </Text>
+                </div>
+                {adjustments.length > 0 && (
+                  <div className="flex justify-between text-ui-fg-subtle">
+                    <Text size="small">Adjustments</Text>
+                    <Text
+                      size="small"
+                      className={`font-mono ${adjustmentTotal < 0 ? "text-ui-fg-error" : ""}`}
+                    >
+                      {adjustmentTotal < 0 ? "−" : ""}$
+                      {Math.abs(adjustmentTotal).toFixed(2)}
+                    </Text>
+                  </div>
+                )}
+                <div className="flex justify-between pt-1">
+                  <Text className="font-medium">PO total</Text>
+                  <Text className="font-mono font-medium">
+                    ${total.toFixed(2)}
+                  </Text>
+                </div>
               </div>
             )}
 

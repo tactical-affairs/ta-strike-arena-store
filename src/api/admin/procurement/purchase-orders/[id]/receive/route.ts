@@ -81,7 +81,7 @@ export const POST = async (
   }
 
   const purchase_order = await procurement.retrievePurchaseOrder(id, {
-    relations: ["lines", "supplier"],
+    relations: ["lines", "supplier", "adjustments"],
   });
   res.json({
     purchase_order,
