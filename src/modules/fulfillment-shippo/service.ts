@@ -64,6 +64,11 @@ export type ShippoProviderOptions = {
 
 type InjectedDependencies = {
   logger: Logger;
+  shippingOptionService?: {
+    retrieve: (
+      id: string,
+    ) => Promise<{ id: string; name: string; data?: Record<string, unknown> | null }>;
+  };
 };
 
 /**
@@ -127,6 +132,7 @@ class ShippoFulfillmentProviderService extends AbstractFulfillmentProviderServic
   protected logger_: Logger;
   protected options_: ShippoProviderOptions;
   protected client_: ShippoClient;
+  protected shippingOptionService_?: InjectedDependencies["shippingOptionService"];
   /**
    * Short-lived cache of Shippo shipment responses keyed by
    * `cart_id + items/address hash`. Purpose:
@@ -149,6 +155,7 @@ class ShippoFulfillmentProviderService extends AbstractFulfillmentProviderServic
   constructor(deps: InjectedDependencies, options: ShippoProviderOptions) {
     super();
     this.logger_ = deps.logger;
+    this.shippingOptionService_ = deps.shippingOptionService;
     this.options_ = options;
     this.client_ = new ShippoClient({
       apiKey: options.apiKey,
@@ -295,10 +302,36 @@ class ShippoFulfillmentProviderService extends AbstractFulfillmentProviderServic
     fulfillment: Partial<Omit<FulfillmentDTO, "provider_id" | "data" | "items">>
   ): Promise<CreateFulfillmentResult> {
     const optionData = (data as ShippoOptionData) ?? {};
-    const opt = this.lookupOption(optionData);
+    let opt = this.lookupOption(optionData);
+
+    // Fallback: Medusa v2 can pass an empty `data` here when the
+    // cart → order flow didn't propagate the shipping_option's data
+    // onto the shipping_method row. Resolve the real option's data
+    // via shippingOptionService using the fulfillment's
+    // shipping_option_id.
+    if (!opt) {
+      const fulfillmentShippingOptionId = (
+        fulfillment as { shipping_option_id?: string }
+      ).shipping_option_id;
+      if (fulfillmentShippingOptionId && this.shippingOptionService_) {
+        try {
+          const so = await this.shippingOptionService_.retrieve(
+            fulfillmentShippingOptionId,
+          );
+          if (so?.data) {
+            opt = this.lookupOption(so.data as ShippoOptionData);
+          }
+        } catch (err) {
+          this.logger_.warn(
+            `[shippo] fallback option lookup failed: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
+
     if (!opt) {
       throw new Error(
-        `Shippo: cannot create fulfillment for unknown option ${JSON.stringify(optionData)}`
+        `Shippo: cannot create fulfillment for unknown option ${JSON.stringify(optionData)} (shipping_option_id=${(fulfillment as { shipping_option_id?: string }).shipping_option_id ?? "?"})`
       );
     }
 
