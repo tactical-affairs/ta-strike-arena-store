@@ -74,6 +74,11 @@ const modules: Array<Record<string, unknown>> = [
     resolve: "@medusajs/medusa/fulfillment",
     options: { providers: fulfillmentProviders },
   },
+  // Custom module: purchase orders + FIFO inventory lots + COGS ledger.
+  // Owns its own tables; links to core via src/links/*.
+  {
+    resolve: "./src/modules/procurement",
+  },
 ]
 if (paymentProviders.length > 0) {
   modules.push({

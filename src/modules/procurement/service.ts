@@ -1,0 +1,396 @@
+/**
+ * Procurement + FIFO-COGS module service.
+ *
+ * Tracks purchase orders, inventory lots (FIFO cost layers), and
+ * COGS entries. Consumes lots on fulfillment and reverses on return.
+ *
+ * Cross-module calls (to core inventory for stock bumps) go through
+ * the container — this service is deliberately ignorant of stock
+ * quantities, which stay authoritative in Medusa's inventory module.
+ */
+
+import { MedusaService } from "@medusajs/framework/utils";
+import { MedusaError } from "@medusajs/framework/utils";
+import { Supplier } from "./models/supplier";
+import { PurchaseOrder } from "./models/purchase-order";
+import { PurchaseOrderLine } from "./models/purchase-order-line";
+import { InventoryLot } from "./models/inventory-lot";
+import { CogsEntry } from "./models/cogs-entry";
+
+export type CreatePurchaseOrderInput = {
+  supplier_id: string;
+  po_number?: string;
+  ordered_at?: Date | string;
+  expected_at?: Date | string;
+  notes?: string;
+  created_by?: string;
+  lines: Array<{
+    variant_id: string;
+    qty_ordered: number;
+    unit_cost: number;
+    currency?: string;
+  }>;
+};
+
+export type ReceivePurchaseOrderInput = {
+  purchase_order_id: string;
+  location_id: string;
+  received_at?: Date | string;
+  lines: Array<{
+    po_line_id: string;
+    inventory_item_id: string;
+    qty_received: number;
+  }>;
+};
+
+export type ConsumeFifoInput = {
+  order_id: string;
+  order_line_item_id: string;
+  inventory_item_id: string;
+  qty: number;
+  posted_at?: Date | string;
+};
+
+export type ConsumeFifoResult = {
+  total_cost: number;
+  entries: Array<{
+    lot_id: string;
+    qty: number;
+    unit_cost: number;
+    total_cost: number;
+  }>;
+  uncovered_qty: number; // > 0 means we ran out of lots — posts with a warning
+};
+
+export type ReverseCogsInput = {
+  order_id: string;
+  order_line_item_id: string;
+  inventory_item_id: string;
+  location_id: string;
+  qty: number;
+  condition: "resellable" | "damaged";
+  reversed_at?: Date | string;
+};
+
+class ProcurementModuleService extends MedusaService({
+  Supplier,
+  PurchaseOrder,
+  PurchaseOrderLine,
+  InventoryLot,
+  CogsEntry,
+}) {
+  /**
+   * Build a draft PO with its lines in one call. Lines are created
+   * via the auto-generated createPurchaseOrderLines method inherited
+   * from MedusaService.
+   */
+  async createPurchaseOrderWithLines(
+    input: CreatePurchaseOrderInput,
+  ): Promise<{ id: string }> {
+    if (!input.lines?.length) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "Purchase order must have at least one line",
+      );
+    }
+
+    const poNumber = input.po_number ?? this.generatePoNumber();
+    const po = await this.createPurchaseOrders({
+      po_number: poNumber,
+      status: "draft",
+      supplier_id: input.supplier_id,
+      ordered_at: input.ordered_at
+        ? new Date(input.ordered_at)
+        : null,
+      expected_at: input.expected_at
+        ? new Date(input.expected_at)
+        : null,
+      notes: input.notes,
+      created_by: input.created_by,
+    });
+
+    await this.createPurchaseOrderLines(
+      input.lines.map((l) => ({
+        purchase_order_id: po.id,
+        variant_id: l.variant_id,
+        qty_ordered: l.qty_ordered,
+        qty_received: 0,
+        unit_cost: l.unit_cost,
+        currency: l.currency ?? "usd",
+      })),
+    );
+
+    return { id: po.id };
+  }
+
+  /**
+   * Receive all or part of a PO. For each line, creates an
+   * InventoryLot with the received quantity at the line's unit_cost
+   * and advances the line's qty_received counter. Caller is
+   * responsible for bumping core inventory_level.stocked_quantity —
+   * that happens in the admin API route that calls this method, so
+   * this service stays free of cross-module concerns.
+   */
+  async receivePurchaseOrder(
+    input: ReceivePurchaseOrderInput,
+  ): Promise<{ lots_created: string[]; po_status: string }> {
+    const po = await this.retrievePurchaseOrder(input.purchase_order_id, {
+      relations: ["lines"],
+    });
+
+    if (po.status === "closed" || po.status === "canceled") {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `Cannot receive on a ${po.status} purchase order`,
+      );
+    }
+
+    const receivedAt = input.received_at
+      ? new Date(input.received_at)
+      : new Date();
+    const lotsCreated: string[] = [];
+
+    for (const rcv of input.lines) {
+      if (rcv.qty_received <= 0) continue;
+
+      const line = po.lines?.find((l) => l.id === rcv.po_line_id);
+      if (!line) {
+        throw new MedusaError(
+          MedusaError.Types.INVALID_DATA,
+          `PO line ${rcv.po_line_id} not found on PO ${po.id}`,
+        );
+      }
+
+      const remainingToReceive = line.qty_ordered - line.qty_received;
+      if (rcv.qty_received > remainingToReceive) {
+        throw new MedusaError(
+          MedusaError.Types.INVALID_DATA,
+          `Line ${line.id}: received ${rcv.qty_received} exceeds remaining ${remainingToReceive}`,
+        );
+      }
+
+      const lot = await this.createInventoryLots({
+        inventory_item_id: rcv.inventory_item_id,
+        po_line_id: line.id,
+        location_id: input.location_id,
+        qty_initial: rcv.qty_received,
+        qty_remaining: rcv.qty_received,
+        unit_cost: Number(line.unit_cost),
+        currency: line.currency,
+        received_at: receivedAt,
+        status: "active",
+        source: "po",
+      });
+      lotsCreated.push(lot.id);
+
+      await this.updatePurchaseOrderLines({
+        id: line.id,
+        qty_received: line.qty_received + rcv.qty_received,
+      });
+    }
+
+    const refreshed = await this.retrievePurchaseOrder(po.id, {
+      relations: ["lines"],
+    });
+    const allFilled = (refreshed.lines ?? []).every(
+      (l) => l.qty_received >= l.qty_ordered,
+    );
+    const anyReceived = (refreshed.lines ?? []).some(
+      (l) => l.qty_received > 0,
+    );
+    const newStatus = allFilled
+      ? "closed"
+      : anyReceived
+        ? "partial"
+        : po.status;
+    if (newStatus !== po.status) {
+      await this.updatePurchaseOrders({ id: po.id, status: newStatus });
+    }
+
+    return { lots_created: lotsCreated, po_status: newStatus };
+  }
+
+  /**
+   * Consume FIFO lots for a fulfilled order line. Writes one
+   * CogsEntry per lot touched. Returns the total_cost + a breakdown
+   * for the subscriber to log.
+   *
+   * `uncovered_qty` > 0 means lots ran out mid-consumption — the
+   * caller should log and alert (usually indicates missing opening
+   * balance or a bad inventory count).
+   */
+  async consumeFifo(input: ConsumeFifoInput): Promise<ConsumeFifoResult> {
+    if (input.qty <= 0) {
+      return { total_cost: 0, entries: [], uncovered_qty: 0 };
+    }
+
+    const lots = await this.listInventoryLots(
+      {
+        inventory_item_id: input.inventory_item_id,
+        status: "active",
+      },
+      { order: { received_at: "ASC" } },
+    );
+
+    const postedAt = input.posted_at
+      ? new Date(input.posted_at)
+      : new Date();
+    const entries: ConsumeFifoResult["entries"] = [];
+    let remaining = input.qty;
+    let totalCost = 0;
+
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      if (lot.qty_remaining <= 0) continue;
+
+      const takeQty = Math.min(lot.qty_remaining, remaining);
+      const unitCost = Number(lot.unit_cost);
+      const lineCost = takeQty * unitCost;
+
+      await this.createCogsEntries({
+        order_id: input.order_id,
+        order_line_item_id: input.order_line_item_id,
+        lot_id: lot.id,
+        qty: takeQty,
+        unit_cost: unitCost,
+        total_cost: lineCost,
+        currency: lot.currency,
+        posted_at: postedAt,
+      });
+
+      const newRemaining = lot.qty_remaining - takeQty;
+      await this.updateInventoryLots({
+        id: lot.id,
+        qty_remaining: newRemaining,
+        status: newRemaining === 0 ? "exhausted" : "active",
+      });
+
+      entries.push({
+        lot_id: lot.id,
+        qty: takeQty,
+        unit_cost: unitCost,
+        total_cost: lineCost,
+      });
+      totalCost += lineCost;
+      remaining -= takeQty;
+    }
+
+    return {
+      total_cost: totalCost,
+      entries,
+      uncovered_qty: remaining,
+    };
+  }
+
+  /**
+   * Reverse COGS for a returned order line. Creates offsetting
+   * CogsEntry reversals (by setting reversed_at on the originals)
+   * and either re-creates an InventoryLot at original cost
+   * (resellable) or records a damaged lot (damaged).
+   *
+   * We reverse newest-first (LIFO on the reversal side) because the
+   * original consumption was FIFO-oldest-first — reversing from the
+   * most recently-consumed lot minimizes the chance of touching
+   * already-exhausted lots.
+   */
+  async reverseCogsForReturn(
+    input: ReverseCogsInput,
+  ): Promise<{ new_lot_id: string | null; cost_reversed: number }> {
+    const entries = await this.listCogsEntries(
+      {
+        order_line_item_id: input.order_line_item_id,
+        reversed_at: null,
+      },
+      { order: { posted_at: "DESC" } },
+    );
+
+    const reversedAt = input.reversed_at
+      ? new Date(input.reversed_at)
+      : new Date();
+    let remainingToReturn = input.qty;
+    let totalReversedCost = 0;
+    let unitCostForNewLot = 0;
+
+    for (const entry of entries) {
+      if (remainingToReturn <= 0) break;
+
+      const takeQty = Math.min(entry.qty, remainingToReturn);
+      const entryUnitCost = Number(entry.unit_cost);
+      const revertedCost = takeQty * entryUnitCost;
+
+      await this.updateCogsEntries({
+        id: entry.id,
+        reversed_at: reversedAt,
+      });
+
+      totalReversedCost += revertedCost;
+      unitCostForNewLot = entryUnitCost;
+      remainingToReturn -= takeQty;
+    }
+
+    let newLotId: string | null = null;
+    if (input.condition === "resellable" && input.qty > 0) {
+      const lot = await this.createInventoryLots({
+        inventory_item_id: input.inventory_item_id,
+        po_line_id: null,
+        location_id: input.location_id,
+        qty_initial: input.qty,
+        qty_remaining: input.qty,
+        unit_cost: unitCostForNewLot,
+        currency: "usd",
+        received_at: reversedAt,
+        status: "active",
+        source: "return_restock",
+      });
+      newLotId = lot.id;
+    } else if (input.condition === "damaged" && input.qty > 0) {
+      const lot = await this.createInventoryLots({
+        inventory_item_id: input.inventory_item_id,
+        po_line_id: null,
+        location_id: input.location_id,
+        qty_initial: input.qty,
+        qty_remaining: 0,
+        unit_cost: unitCostForNewLot,
+        currency: "usd",
+        received_at: reversedAt,
+        status: "damaged",
+        source: "return_restock",
+      });
+      newLotId = lot.id;
+    }
+
+    return { new_lot_id: newLotId, cost_reversed: totalReversedCost };
+  }
+
+  /**
+   * Weighted average cost across all active lots for an inventory
+   * item. Used by the product-detail widget to show a stable cost
+   * basis (FIFO unit cost fluctuates with each lot).
+   */
+  async getWeightedAverageCost(
+    inventory_item_id: string,
+  ): Promise<number | null> {
+    const lots = await this.listInventoryLots({
+      inventory_item_id,
+      status: "active",
+    });
+    let totalQty = 0;
+    let totalValue = 0;
+    for (const lot of lots) {
+      totalQty += lot.qty_remaining;
+      totalValue += lot.qty_remaining * Number(lot.unit_cost);
+    }
+    return totalQty > 0 ? totalValue / totalQty : null;
+  }
+
+  private generatePoNumber(): string {
+    const now = new Date();
+    const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
+      now.getDate(),
+    ).padStart(2, "0")}`;
+    const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `PO-${ymd}-${rand}`;
+  }
+}
+
+export default ProcurementModuleService;
