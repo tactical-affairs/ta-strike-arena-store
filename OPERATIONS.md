@@ -59,12 +59,12 @@ provider dashboards risks state drift between Medusa and the provider.
 
 ## Access + credentials
 
-| System | URL | Login type |
+| System | URL | Login |
 |---|---|---|
-| Medusa Admin | `https://<backend-domain>/app` (prod) or `http://localhost:9000/app` (dev) | Email + password (managed in Medusa, one account per employee) |
-| FluidPay | `https://app.fluidpay.com` (prod) / `https://sandbox.fluidpay.com` (dev) | FluidPay merchant account |
-| Shippo | `https://apps.goshippo.com` | Shippo account; toggle **Live** / **Test** in the top bar |
-| TaxJar | `https://app.taxjar.com` | TaxJar account; sandbox and live keys are separate |
+| Medusa Admin | `https://<backend-domain>/app` | Email + password |
+| FluidPay | `https://app.fluidpay.com` | FluidPay merchant account |
+| Shippo | `https://apps.goshippo.com` | Shippo account |
+| TaxJar | `https://app.taxjar.com` | TaxJar account |
 
 Your credentials for each of these systems will be set up by the
 admin. If you don't have access to one of them, ask.
@@ -127,17 +127,10 @@ Medusa Admin → **Products → Create product**.
 5. **Save as draft** first, review on `/shop/<handle>/` on the staging
    storefront, then publish.
 
-After publishing, deploy the storefront:
-
-```bash
-cd ta-strike-arena-website
-npm run deploy:gh
-```
-
-The deploy script pulls the latest product data from the backend
-automatically (image URLs, variant IDs, prices) and bakes them into
-the static site. The new product page goes live after the GitHub
-Pages deploy finishes — usually a few minutes.
+After publishing, ask the developer to redeploy the storefront.
+Product data, images, and prices are baked into the site at build
+time, so the new product won't appear on strikearena.net until the
+redeploy finishes (usually a few minutes).
 
 ### Updating inventory counts
 
@@ -164,16 +157,12 @@ adjust for outgoing orders manually.
   / delete old ones. Reorder by dragging. The first image is the
   thumbnail. Save.
 
-Any of these changes require a storefront redeploy to go live:
+Any of these changes require a storefront redeploy to go live. Ask
+the developer to redeploy after you finish a round of edits.
 
-```bash
-cd ta-strike-arena-website
-npm run deploy:gh
-```
-
-**Rule**: every catalog edit should be followed by a deploy within
-the same day. Otherwise the marketing site and admin-UI drift until
-the next unrelated deploy.
+**Rule**: every catalog edit should be followed by a redeploy within
+the same day. Otherwise strikearena.net drifts from what you see in
+the admin-UI until the next unrelated deploy.
 
 ### Deprecating / temporarily disabling a product
 
@@ -183,22 +172,22 @@ the next unrelated deploy.
 - **Permanent removal**: Medusa Admin → Products → [product] → **Delete**
   only if the product has never been ordered. Otherwise **Publish
   status → Draft** so it disappears from the storefront but the order
-  history stays intact. Run `npm run sync-images` + deploy.
+  history stays intact. Ask the developer to redeploy the storefront.
 
 ### Adding a new bundle
 
-Bundles (e.g. "Pro Plus Package") are multi-SKU packages that ship as a
-single box. In the current setup they're defined in code, not admin:
+Bundles (e.g. "Pro Plus Package") are multi-SKU packages that ship as
+a single box. In the current setup they can't be created from the
+admin UI — they're defined in code.
 
-- `ta-strike-arena-store/src/scripts/seed.ts` — add a new `bundles[]`
-  entry listing components and their quantities. The seed computes
-  the bundle's parcel weight (sum of components) and box dims (max of
-  components) automatically.
-- After editing seed, deploy the backend. Never re-run `npm run seed`
-  against prod. Instead, write a one-off `medusa exec
-  ./src/scripts/add-bundle-xyz.ts` script that creates just the new
-  bundle, and commit it. The seed file stays the source of truth for
-  fresh dev environments.
+Give the developer:
+- The bundle's display name, subtitle, description, images, and price.
+- The list of component SKUs (existing products) and how many of each
+  go in the bundle.
+- Category and collection it should live in.
+
+They'll add the bundle and redeploy. Expect ~a day of lead time for
+new bundles.
 
 ---
 
@@ -247,7 +236,7 @@ In Medusa Admin → click into the order. Check:
    otherwise, but a manual inventory adjustment since then can
    oversell).
 4. **Totals** — Subtotal + Shipping + Tax = Total. If they don't,
-   something went sideways — check backend logs.
+   something went sideways — flag to the developer before fulfilling.
 5. **Customer notes** — sometimes customers put instructions in the
    order-notes field.
 
@@ -509,11 +498,12 @@ extra complexity.
 Between the 1st and the 5th of each month:
 
 1. TaxJar Dashboard → Transactions → filter previous month.
-2. Count should match Medusa's `orders` placed in the same window
-   (minus any cancellations). If not, investigate — usually a failed
-   subscriber sync (check backend logs).
-3. Cross-check total sales tax collected against Medusa's sum of
-   `order.tax_total` for the month. Should match to the penny.
+2. Count should match Medusa's orders placed in the same window
+   (minus any cancellations). If not, escalate to the developer —
+   usually a failed sync between the two systems.
+3. Cross-check total sales tax collected in TaxJar against Medusa's
+   "Tax" column summed for the month (Admin → Orders → export the
+   month, sum the tax column in Excel). Should match to the penny.
 
 ### Monthly/quarterly: filing
 
@@ -611,27 +601,29 @@ Authorization is about to expire. Either:
 
 ### "Failed to create fulfillment" in Medusa Admin
 
-Usually a Shippo-side issue. Check:
+Usually a Shippo-side issue. Try these first:
 
-1. Medusa backend logs → search `[shippo]`. Common errors:
-   - "Rate expired" → Shippo's rate IDs expire in ~20 minutes. Refresh
-     the order page to get a new rate and retry.
-   - "Parcel too large" → the computed packer parcel exceeds carrier
-     limits. Override the parcel dims manually on the fulfillment
-     screen.
-2. Shippo Dashboard → Shipments → status of the most recent shipment
-   for that order.
+1. **Rate expired** — Shippo's rate IDs expire in ~20 minutes. Refresh
+   the order page to get a new rate and retry.
+2. **Parcel too large** — the computed parcel exceeds carrier limits.
+   Override the parcel dims manually on the fulfillment screen (click
+   the edit icon next to the parcel size).
+3. **Shippo outage** — check [status.shippo.com](https://status.shippo.com).
+
+If none of the above explain it, escalate to the developer — there
+may be an issue in the backend's Shippo integration.
 
 ### Tax line missing on an order
 
-Medusa tax module fell back to `tp_system` (zero rates). Causes:
+Possible causes, in order of likelihood:
 
-- `TAXJAR_API_KEY` unset or wrong on the backend → check Railway env
-  vars, restart backend.
-- TaxJar API outage → they publish status at
-  [status.taxjar.com](https://status.taxjar.com).
-- Ship-to state isn't in the TaxJar nexus list for our account →
-  expected behavior; no action.
+1. **Ship-to state isn't in the TaxJar nexus list** — expected behavior
+   for states where we're not registered. No action.
+2. **TaxJar outage** — check [status.taxjar.com](https://status.taxjar.com).
+   Orders placed during the outage will be missing tax; once the service
+   recovers, new orders resume normally. For orders placed during the
+   outage that should have had tax, see manual fix below.
+3. **Configuration issue on the backend** — escalate to the developer.
 
 Manual fix for a specific order: Medusa Admin → [order] → **Add tax
 manually** using the published state rate. Rare and usually not worth
@@ -667,8 +659,8 @@ Each dashboard has a different indicator:
 |---|---|
 | FluidPay | URL is `sandbox.fluidpay.com`; dashboard has a yellow banner |
 | Shippo | Top-right toggle reads "Test"; data is fake |
-| TaxJar | Top-right selector reads "Sandbox"; separate nexus + transaction data |
-| Medusa | Backend URL: `localhost:9000` or Railway-staging is sandbox; `<prod-domain>` is live |
+| TaxJar | Top-right selector reads "Sandbox" |
+| Medusa | The URL isn't the production domain (ask the developer if unsure) |
 
 **Before any real-money operation**, confirm you're in the live mode of
 every system. It's easy to refund a sandbox transaction thinking
@@ -686,8 +678,8 @@ error.
 1. Check [status.fluidpay.com](https://status.fluidpay.com) to
    confirm the outage.
 2. Post a banner on the storefront homepage: "Our payment processor
-   is temporarily unavailable — check back in an hour." (Add via a
-   quick edit to `src/components/TopBanner.tsx` → deploy.)
+   is temporarily unavailable — check back in an hour." — ask the
+   developer to post the banner and redeploy.
 3. Do NOT switch to a backup processor mid-outage; it's more risk
    than the outage itself.
 
@@ -705,26 +697,23 @@ Live rates and label purchase fail. Orders will still place but show
 ### Medusa backend down
 
 Storefront can't add to cart, show prices, or place orders. Static
-product pages (shop/[handle]) still render (they're pre-built), but
-checkout is dead.
+product pages (`/shop/[handle]/`) still render (they're pre-built),
+but checkout is dead.
 
-1. Railway dashboard → Services → **Medusa** → check logs + restart.
-2. If the DB is down, Railway Postgres dashboard → restart.
-3. If neither helps, contact Railway support.
+**Escalate to the developer immediately** — this is the one outage
+category you cannot work around from ops alone. Post a site banner
+while it's being fixed (ask the developer).
 
 ### Database corruption or accidental delete
 
-Do not panic. Railway Postgres has automatic point-in-time-recovery
-(PITR) backups:
+**Stop all activity and contact the developer immediately.** Do not
+attempt further actions in Medusa Admin — the less activity during
+recovery, the less data reconciliation needed afterward.
 
-1. Railway Postgres → Backups → restore to a point just before the
-   incident.
-2. Restoring creates a new database; point the backend at it via
-   `DATABASE_URL`.
-3. Redeploy the backend.
-4. Reconcile any orders placed between the restore point and now —
-   check FluidPay for authorizations that don't have a matching
-   Medusa order, and reach out to those customers.
+Once the developer has restored from backup: you'll need to
+reconcile any orders placed between the restore point and now —
+check FluidPay for authorizations that don't have a matching Medusa
+order, and reach out to those customers.
 
 ---
 
