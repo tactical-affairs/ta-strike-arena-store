@@ -28,6 +28,11 @@ type OrderAddress = {
   country_code?: string | null;
 };
 
+type OrderTaxLine = {
+  rate?: number | string;
+  rate_amount?: number | string;
+};
+
 type OrderItem = {
   id: string;
   title?: string | null;
@@ -37,6 +42,15 @@ type OrderItem = {
   unit_price: number | string;
   subtotal?: number | string;
   tax_total?: number | string;
+  tax_lines?: OrderTaxLine[];
+};
+
+type OrderShippingMethod = {
+  id: string;
+  name?: string;
+  amount?: number | string;
+  tax_total?: number | string;
+  tax_lines?: OrderTaxLine[];
 };
 
 type OrderLike = {
@@ -46,10 +60,7 @@ type OrderLike = {
   currency_code?: string;
   shipping_address?: OrderAddress | null;
   items?: OrderItem[];
-  subtotal?: number | string;
-  shipping_total?: number | string;
-  tax_total?: number | string;
-  total?: number | string;
+  shipping_methods?: OrderShippingMethod[];
 };
 
 function num(v: unknown, fallback = 0): number {
@@ -109,8 +120,17 @@ export default async function taxjarOrderSync({
 
   let order: OrderLike;
   try {
+    // Medusa v2's default retrieveOrder doesn't compute aggregate totals
+    // (tax_total, shipping_total, etc.) — we compute from the raw items +
+    // shipping_methods + tax_lines. Load those relations explicitly.
     order = (await orderService.retrieveOrder(data.id, {
-      relations: ["items", "shipping_address"],
+      relations: [
+        "items",
+        "items.tax_lines",
+        "shipping_address",
+        "shipping_methods",
+        "shipping_methods.tax_lines",
+      ],
     })) as unknown as OrderLike;
   } catch (err) {
     logger.error(
@@ -131,6 +151,44 @@ export default async function taxjarOrderSync({
   const from = fromAddress();
   const transactionDate = (order.created_at ?? new Date()).toString();
 
+  // Sum tax rates from tax_lines (stored as percents, e.g. 10.4 for 10.4%).
+  // There's typically one line per taxing jurisdiction; with TaxJar we get
+  // the combined rate as a single line but sum defensively.
+  const totalRate = (lines: OrderTaxLine[] | undefined) =>
+    (lines ?? []).reduce((sum, l) => sum + num(l.rate), 0);
+
+  // TaxJar requires: amount == sum(line_items.unit_price * quantity) + shipping.
+  // All values are pre-tax (sales_tax is tracked separately).
+  let itemsSubtotal = 0;
+  let itemsTax = 0;
+  const lineItems = (order.items ?? []).map((item, idx) => {
+    const qty = num(item.quantity, 1);
+    const unit = num(item.unit_price);
+    const lineSubtotal = unit * qty;
+    const lineTax = lineSubtotal * (totalRate(item.tax_lines) / 100);
+    itemsSubtotal += lineSubtotal;
+    itemsTax += lineTax;
+    return {
+      id: item.id ?? `line_${idx}`,
+      quantity: qty,
+      product_identifier: item.variant_sku ?? undefined,
+      description: item.product_title ?? item.title ?? undefined,
+      unit_price: unit,
+      sales_tax: Number(lineTax.toFixed(2)),
+    };
+  });
+
+  let shippingSubtotal = 0;
+  let shippingTax = 0;
+  for (const sm of order.shipping_methods ?? []) {
+    const amt = num(sm.amount);
+    shippingSubtotal += amt;
+    shippingTax += amt * (totalRate(sm.tax_lines) / 100);
+  }
+
+  const amount = itemsSubtotal + shippingSubtotal;
+  const salesTax = itemsTax + shippingTax;
+
   try {
     await client.createOrderTransaction({
       transaction_id: order.id,
@@ -146,20 +204,16 @@ export default async function taxjarOrderSync({
       to_state: shipping.province.toUpperCase(),
       to_city: shipping.city ?? undefined,
       to_street: shipping.address_1 ?? undefined,
-      amount: num(order.subtotal) + num(order.shipping_total),
-      shipping: num(order.shipping_total),
-      sales_tax: num(order.tax_total),
-      line_items: (order.items ?? []).map((item, idx) => ({
-        id: item.id ?? `line_${idx}`,
-        quantity: num(item.quantity, 1),
-        product_identifier: item.variant_sku ?? undefined,
-        description: item.product_title ?? item.title ?? undefined,
-        unit_price: num(item.unit_price),
-        sales_tax: num(item.tax_total),
-      })),
+      amount: Number(amount.toFixed(2)),
+      shipping: Number(shippingSubtotal.toFixed(2)),
+      sales_tax: Number(salesTax.toFixed(2)),
+      line_items: lineItems,
     });
     logger.info(
-      `[taxjar-order-sync] synced order ${order.id} to TaxJar`,
+      `[taxjar-order-sync] synced order ${order.id} ` +
+        `(amount=${amount.toFixed(2)}, shipping=${shippingSubtotal.toFixed(
+          2,
+        )}, tax=${salesTax.toFixed(2)})`,
     );
   } catch (err) {
     logger.error(
