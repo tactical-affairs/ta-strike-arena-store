@@ -15,6 +15,7 @@
  * box templates (see `packer.ts`).
  */
 
+import { createHash } from "node:crypto";
 import { AbstractFulfillmentProviderService } from "@medusajs/framework/utils";
 import type {
   CalculateShippingOptionPriceDTO,
@@ -32,6 +33,7 @@ import {
   type ShippoAddress,
   type ShippoParcel,
   type ShippoRate,
+  type ShippoShipment,
 } from "./client";
 import {
   BOX_TEMPLATES,
@@ -125,6 +127,24 @@ class ShippoFulfillmentProviderService extends AbstractFulfillmentProviderServic
   protected logger_: Logger;
   protected options_: ShippoProviderOptions;
   protected client_: ShippoClient;
+  /**
+   * Short-lived cache of Shippo shipment responses keyed by
+   * `cart_id + items/address hash`. Purpose:
+   *   1. Medusa invokes calculatePrice once per enabled shipping option
+   *      (6x per cart refresh). A single Shippo POST /shipments/ call
+   *      returns rates for every carrier, so caching lets us serve all
+   *      six lookups from one API call.
+   *   2. Shippo's sandbox is non-deterministic — back-to-back calls for
+   *      the same shipment sometimes return only a partial carrier set
+   *      or an empty rates array. Caching stabilises the user-facing
+   *      price between the storefront's /calculate call and Medusa's
+   *      re-invocation during addShippingMethod.
+   */
+  private shipmentCache_ = new Map<
+    string,
+    { shipment: ShippoShipment; expiresAt: number }
+  >();
+  private static readonly SHIPMENT_CACHE_TTL_MS = 5 * 60 * 1000;
 
   constructor(deps: InjectedDependencies, options: ShippoProviderOptions) {
     super();
@@ -199,22 +219,12 @@ class ShippoFulfillmentProviderService extends AbstractFulfillmentProviderServic
       return { calculated_amount: 0, is_calculated_price_tax_inclusive: false };
     }
 
-    const shipment = await this.client_.createShipment({
-      addressFrom: this.fromAddressForShippo(),
-      addressTo: this.toAddressForShippo(context),
-      parcels: parcels.map(toShippoParcel),
-      metadata: `cart:${context.id ?? "unknown"}`,
-    });
-
+    const shipment = await this.getOrFetchShipment(context, parcels);
     const rate = pickRate(shipment.rates, opt.carrier, opt.servicelevel);
     if (!rate) {
-      // Shippo dropped this carrier (often because a parcel exceeds a
-      // carrier-specific limit). Return 0 so Medusa hides the option.
-      this.logger_.debug(
-        `[shippo] no ${opt.carrier}/${opt.servicelevel} rate for cart ${
-          context.id ?? "?"
-        }`
-      );
+      // Carrier didn't return a rate for this shipment (dim/weight out of
+      // its range, or — in Shippo's sandbox — the carrier just wasn't in
+      // this particular response). Return 0 so Medusa hides the option.
       return { calculated_amount: 0, is_calculated_price_tax_inclusive: false };
     }
 
@@ -222,6 +232,60 @@ class ShippoFulfillmentProviderService extends AbstractFulfillmentProviderServic
       calculated_amount: parseFloat(rate.amount),
       is_calculated_price_tax_inclusive: false,
     };
+  }
+
+  /**
+   * Returns a cached Shippo shipment for this cart if one was fetched
+   * within the last SHIPMENT_CACHE_TTL_MS; otherwise calls Shippo,
+   * caches the response (only if non-empty — don't poison the cache
+   * with a bad sandbox response), and returns it.
+   */
+  private async getOrFetchShipment(
+    context: CartContext,
+    parcels: PackedParcel[]
+  ): Promise<ShippoShipment> {
+    const key = this.shipmentCacheKey(context, parcels);
+    const now = Date.now();
+
+    const cached = this.shipmentCache_.get(key);
+    if (cached && cached.expiresAt > now) {
+      return cached.shipment;
+    }
+
+    const shipment = await this.client_.createShipment({
+      addressFrom: this.fromAddressForShippo(),
+      addressTo: this.toAddressForShippo(context),
+      parcels: parcels.map(toShippoParcel),
+      metadata: `cart:${context.id ?? "unknown"}`,
+    });
+
+    if (shipment.rates && shipment.rates.length > 0) {
+      this.shipmentCache_.set(key, {
+        shipment,
+        expiresAt: now + ShippoFulfillmentProviderService.SHIPMENT_CACHE_TTL_MS,
+      });
+    }
+    this.pruneShipmentCache(now);
+    return shipment;
+  }
+
+  private shipmentCacheKey(context: CartContext, parcels: PackedParcel[]): string {
+    const addr = context.shipping_address;
+    const addrPart = addr
+      ? `${addr.country_code}|${addr.postal_code}|${addr.province}|${addr.city}|${addr.address_1}`
+      : "no-address";
+    const parcelPart = parcels
+      .map((p) => `${p.template.id}:${p.weightOz}`)
+      .join(",");
+    return createHash("sha1")
+      .update(`${context.id ?? ""}|${addrPart}|${parcelPart}`)
+      .digest("hex");
+  }
+
+  private pruneShipmentCache(now: number): void {
+    for (const [key, entry] of this.shipmentCache_) {
+      if (entry.expiresAt <= now) this.shipmentCache_.delete(key);
+    }
   }
 
   async createFulfillment(
