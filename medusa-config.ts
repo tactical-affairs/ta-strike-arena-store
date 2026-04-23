@@ -39,10 +39,40 @@ if (process.env.FLUIDPAY_API_KEY) {
   })
 }
 
+const fulfillmentProviders: Array<Record<string, unknown>> = [
+  { resolve: "@medusajs/medusa/fulfillment-manual", id: "manual" },
+]
+if (process.env.SHIPPO_API_KEY) {
+  fulfillmentProviders.push({
+    resolve: "./src/modules/fulfillment-shippo",
+    id: "shippo",
+    options: {
+      apiKey: process.env.SHIPPO_API_KEY,
+      baseUrl: process.env.SHIPPO_BASE_URL,
+      webhookSecret: process.env.SHIPPO_WEBHOOK_SECRET,
+      fromAddress: {
+        name: process.env.SHIPPO_FROM_NAME,
+        street1: process.env.SHIPPO_FROM_STREET1 ?? "",
+        street2: process.env.SHIPPO_FROM_STREET2,
+        city: process.env.SHIPPO_FROM_CITY ?? "",
+        state: process.env.SHIPPO_FROM_STATE ?? "",
+        zip: process.env.SHIPPO_FROM_ZIP ?? "",
+        country: process.env.SHIPPO_FROM_COUNTRY ?? "US",
+        phone: process.env.SHIPPO_FROM_PHONE,
+        email: process.env.SHIPPO_FROM_EMAIL,
+      },
+    },
+  })
+}
+
 const modules: Array<Record<string, unknown>> = [
   {
     resolve: "@medusajs/medusa/file",
     options: { providers: [fileProvider] },
+  },
+  {
+    resolve: "@medusajs/medusa/fulfillment",
+    options: { providers: fulfillmentProviders },
   },
 ]
 if (paymentProviders.length > 0) {

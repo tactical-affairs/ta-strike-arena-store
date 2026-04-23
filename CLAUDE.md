@@ -111,6 +111,33 @@ Provider activation env vars (see `.env.template`):
 
 **Prod activation**: add the same vars on Railway (with the prod FluidPay keys and `FLUIDPAY_BASE_URL=https://app.fluidpay.com`). Redeploy. Enable the provider in the prod region. Remove Authorize.net configuration from the storefront checkout flow as part of the switchover.
 
+### Shipping / fulfillment
+
+`medusa-config.ts` registers the Fulfillment Module with two providers:
+
+- **manual_manual** (`@medusajs/medusa/fulfillment-manual`) — always on, used as a fallback when Shippo credentials aren't set.
+- **shippo_shippo** — custom provider in `src/modules/fulfillment-shippo/`. Registered **only when `SHIPPO_API_KEY` is set**. See the module's [README](src/modules/fulfillment-shippo/README.md) for supported carriers, parcel templates, and sandbox-testing steps.
+
+When `SHIPPO_API_KEY` is unset, `seed.ts` creates the original two flat-rate options (Standard $10 / Express $25). When set, it seeds six calculated options mapped to Shippo carrier/service pairs (USPS Ground Advantage, USPS Priority, UPS Ground, UPS 2nd Day, FedEx Ground, FedEx 2Day).
+
+**Bundle handling**: Bundle SKUs pass through to their components at rate-calc time. A "Pro Plus Package" in the cart expands to 5 Pro Target parcels + 1 Training Console parcel via Medusa's inventory-kit relation (`variant.inventory_items[]` with `required_quantity` + linked `inventory_item.{weight,length,width,height}`). Component dims come from the variant-level parcel values seeded on each non-bundle product; the seed propagates those to the auto-created inventory items.
+
+**Parcel packing**: First-Fit Decreasing by weight against five box templates (SM 5lb, MD 20lb, LG 40lb, XL 60lb, RIFLE 15lb long-and-narrow). All templates fit under USPS's 70 lb / 130" length+girth limits, so any packed parcel is shippable by every supported carrier. See `src/modules/fulfillment-shippo/packer.ts`.
+
+**Webhook**: `POST /hooks/shippo` receives tracking updates. Signature verified via HMAC-SHA256 over the raw body using `SHIPPO_WEBHOOK_SECRET`. Events are emitted on the internal event bus as `shippo.{event}`.
+
+Provider activation env vars (see `.env.template` for the full list):
+
+| Variable | Purpose |
+|----------|---------|
+| `SHIPPO_API_KEY` | Test (`shippo_test_...`) or live (`shippo_live_...`) token — presence toggles the module on |
+| `SHIPPO_FROM_*` | Warehouse origin address (name, street1/2, city, state, zip, country, phone, email) — printed on labels and sent to carriers for rate quotes |
+| `SHIPPO_WEBHOOK_SECRET` | HMAC signing secret from Shippo dashboard → Settings → Webhooks |
+
+**Dev activation**: sign up at [apps.goshippo.com](https://apps.goshippo.com/signup), copy the "Test Token" from API → Tokens, set `SHIPPO_API_KEY=shippo_test_...` + `SHIPPO_FROM_*` in `.env`, restart Medusa, and reseed. Sandbox rates come from Shippo's test carriers — no real labels are purchased.
+
+**Prod activation**: set `SHIPPO_API_KEY=shippo_live_...` plus the production warehouse address on Railway. Connect live UPS/USPS/FedEx carrier accounts in the Shippo dashboard. Redeploy the backend, then redeploy the frontend so the prebuild sync picks up the new calculated options.
+
 ### Build Output
 
 TypeScript compiles to `.medusa/server/` (git-ignored). The admin dashboard compiles to `.medusa/admin/`. Do not edit files in `.medusa/`.
@@ -150,6 +177,7 @@ First-time promotion from dev to production. Do these in order; each step depend
 - **Railway project** with this repo connected (auto-deploys on push to `main`). Includes managed Postgres + Redis plugins, or wire your own.
 - **Cloudflare R2 bucket** (e.g. `ta-strike-arena-images`) with public access enabled and an API token scoped to Object Read + Write. Note the S3 endpoint (`https://<account-id>.r2.cloudflarestorage.com`) and public URL (`https://pub-<hash>.r2.dev` or a custom domain).
 - **FluidPay merchant account** with production credentials (`pub_...` + `api_...`). Dashboard: https://app.fluidpay.com.
+- **Shippo account** at https://apps.goshippo.com with a live API token (`shippo_live_...`) and at least one live carrier connected (USPS, UPS, FedEx). The live carriers must be fully activated in Shippo → Settings → Carriers, not just in test mode.
 
 ### 2. Railway env vars
 
@@ -174,6 +202,15 @@ Set all of these in the Railway service's Variables tab before first deploy. **N
 | `FLUIDPAY_PUBLIC_KEY` | production `pub_...` public key | Stored on payment sessions so the storefront can render the Tokenizer |
 | `FLUIDPAY_BASE_URL` | `https://app.fluidpay.com` | Must be the prod host, **not** sandbox |
 | `FLUIDPAY_CAPTURE_MODE` | `authorize` (default) or `sale` | `authorize` lets admins review before capturing |
+| `SHIPPO_API_KEY` | production `shippo_live_...` token | Fulfillment provider registers only when this is set; live key swaps sandbox carriers for real USPS/UPS/FedEx |
+| `SHIPPO_FROM_NAME` | e.g. `Strike Arena Warehouse` | Sender name printed on shipping labels |
+| `SHIPPO_FROM_STREET1` | warehouse street address | Sent to carriers for rate quotes + printed on labels |
+| `SHIPPO_FROM_STREET2` | apartment/suite (optional) | |
+| `SHIPPO_FROM_CITY` / `SHIPPO_FROM_STATE` / `SHIPPO_FROM_ZIP` | warehouse city / 2-letter state / ZIP | USPS / UPS / FedEx will reject malformed values |
+| `SHIPPO_FROM_COUNTRY` | `US` | Two-letter ISO country code |
+| `SHIPPO_FROM_PHONE` | warehouse phone in E.164 | Required by some carriers for label acceptance |
+| `SHIPPO_FROM_EMAIL` | warehouse contact email | Returned to carriers for delivery notifications |
+| `SHIPPO_WEBHOOK_SECRET` | HMAC secret from Shippo dashboard | Verifies `POST /hooks/shippo` came from Shippo. Required in prod — see step 5 below |
 
 ### 3. Initial seed (run once, from local shell)
 
@@ -206,13 +243,35 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/
 
 Or do it in the Admin UI: Settings → Regions → United States → add `pp_fluidpay_fluidpay`.
 
-### 5. Wire up the frontend
+### 5. Register the Shippo webhook
 
-See [`ta-strike-arena-website/CLAUDE.md`](../ta-strike-arena-website/CLAUDE.md#production-setup-first-time). The storefront needs the new publishable API key, its own FluidPay public key, and a rebuild/redeploy so the prebuild sync picks up prod pricing + images + variant IDs.
+The backend is deployed and has a public Railway URL. Now subscribe Shippo to send tracking updates to it.
 
-### 6. Smoke test
+1. Log into the Shippo dashboard at https://apps.goshippo.com and switch to **Live** mode (toggle in the top bar). Test-mode webhooks won't fire for real shipments.
+2. Go to **Settings → Webhooks → Add webhook**.
+3. Fill in:
+   - **URL**: `https://<railway-backend>/hooks/shippo` (no trailing slash)
+   - **Event types**: check `track_updated` and `transaction_updated`
+   - **Mode**: `Live`
+4. Save. Shippo displays the **signing secret** once — copy it immediately.
+5. In Railway, set `SHIPPO_WEBHOOK_SECRET=<that-secret>` on the backend service. Redeploy so the new env var loads.
+6. Back in Shippo, click the webhook's **"Send test"** button. Check Railway logs for a `[shippo-webhook] received ...` line; a 401 means the secret mismatched — double-check for trailing whitespace.
 
-Before announcing launch: place one real low-value order end-to-end against prod. Confirm the order appears in Admin → Orders with an authorized payment, the R2-hosted images load, and the confirmation page shows an order ID. If capturing manually (`FLUIDPAY_CAPTURE_MODE=authorize`), also exercise the capture flow from the admin UI once.
+What happens if the webhook secret is missing or wrong:
+- **Missing** (`SHIPPO_WEBHOOK_SECRET` unset): the route logs a warning and accepts any request. Fine for dev; never acceptable in prod — any attacker with the endpoint URL could spoof tracking updates.
+- **Wrong**: incoming webhooks get 401'd. Orders still ship and labels still print, but Medusa won't auto-advance fulfillment status on delivery — ops would have to mark orders shipped manually.
+
+Dev note: Shippo can't POST to `localhost`, so the webhook flow isn't exercised in local dev unless you expose the backend via ngrok / cloudflared. Not necessary for rate-calc or label-purchase testing.
+
+### 6. Wire up the frontend
+
+See [`ta-strike-arena-website/CLAUDE.md`](../ta-strike-arena-website/CLAUDE.md#production-setup-first-time). The storefront needs the new publishable API key, its own FluidPay public key, and a rebuild/redeploy so the prebuild sync picks up prod pricing + images + variant IDs. No Shippo env var is needed on the storefront side — the backend decides which shipping options exist.
+
+### 7. Smoke test
+
+Before announcing launch: place one real low-value order end-to-end against prod. Confirm the order appears in Admin → Orders with an authorized payment, the R2-hosted images load, the confirmation page shows an order ID, and the selected live carrier rate was applied (sanity-check against the rate returned by a direct Shippo dashboard quote for the same shipment). If capturing manually (`FLUIDPAY_CAPTURE_MODE=authorize`), also exercise the capture flow from the admin UI once.
+
+Then fulfill that test order in the Admin UI → Orders → Create Fulfillment. A real label PDF appears on the fulfillment record. Confirm the Shippo dashboard shows the matching transaction and that the webhook delivers a `track_updated` event when the carrier picks up the package.
 
 ### Post-launch changes
 

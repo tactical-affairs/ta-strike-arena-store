@@ -85,6 +85,22 @@ type SeedProduct = {
    * sync pulls it to drive "Save $X (Y% off)" copy on product pages.
    */
   msrpAmount?: number;
+  /**
+   * Packaging footprint for live carrier rates. Populated on non-bundle
+   * products only — bundles pass through to component parcels at rate
+   * calc time. Values must reflect the actual shipping carton, not the
+   * retail box: weight in ounces, dims in inches.
+   *
+   * ⚠️  BEFORE PRODUCTION SEED: every value below is a rough placeholder.
+   * Measure the real packaged product and update. The shipping calculator
+   * uses these to build Shippo shipment requests.
+   */
+  parcel?: {
+    weightOz: number;
+    lengthIn: number;
+    widthIn: number;
+    heightIn: number;
+  };
 };
 
 const PRODUCTS: SeedProduct[] = [
@@ -99,6 +115,7 @@ const PRODUCTS: SeedProduct[] = [
     price: 125,
     images: ["/images/strike-arena-target/strike-arena-target-front-yellow.jpg"],
     stockQuantity: 60, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 40, lengthIn: 10, widthIn: 10, heightIn: 3 }, // TODO: measure actual packaging
   },
   {
     title: "Pro Target",
@@ -116,6 +133,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/pro-target/pro-target-read-view.jpg",
     ],
     stockQuantity: 30, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 56, lengthIn: 14, widthIn: 14, heightIn: 4 }, // TODO: measure actual packaging
   },
   {
     title: "Training Console",
@@ -131,6 +149,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/training-console/ports.png",
     ],
     stockQuantity: 15, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 48, lengthIn: 10, widthIn: 8, heightIn: 4 }, // TODO: measure actual packaging
   },
 
   // ─── Packages ──────────────────────────────────────────────
@@ -219,6 +238,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-spider-kit/kit.png",
     ],
     stockQuantity: 25, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 12, lengthIn: 7, widthIn: 5, heightIn: 2 }, // TODO: measure actual packaging
   },
   {
     title: "Laser Ammo Flash Kit",
@@ -235,6 +255,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-flash-kit/kit.png",
     ],
     stockQuantity: 20, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 14, lengthIn: 8, widthIn: 5, heightIn: 2 }, // TODO: measure actual packaging
   },
 
   // ─── Training Handguns ─────────────────────────────────────
@@ -253,6 +274,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/kwa-atp-gt/right-2.png",
     ],
     stockQuantity: 15, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 44, lengthIn: 11, widthIn: 7, heightIn: 3 }, // TODO: measure actual packaging
   },
   {
     title: "KWA ATP-Z Training Pistol",
@@ -269,6 +291,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/kwa-atp-z/right-2.png",
     ],
     stockQuantity: 15, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 44, lengthIn: 11, widthIn: 7, heightIn: 3 }, // TODO: measure actual packaging
   },
   {
     title: "Laser Ammo Glock 17 Recoil Training Handgun",
@@ -284,6 +307,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-glock-17/detail.png",
     ],
     stockQuantity: 10, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 48, lengthIn: 11, widthIn: 7, heightIn: 3 }, // TODO: measure actual packaging
   },
   {
     title: "Laser Ammo Glock 19 Recoil Training Handgun",
@@ -300,6 +324,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-glock-19/detail.png",
     ],
     stockQuantity: 10, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 44, lengthIn: 10, widthIn: 7, heightIn: 3 }, // TODO: measure actual packaging
   },
   {
     title: "Laser Ammo Glock 45 Recoil Training Handgun",
@@ -316,6 +341,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-glock-45/detail.png",
     ],
     stockQuantity: 10, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 48, lengthIn: 11, widthIn: 7, heightIn: 3 }, // TODO: measure actual packaging
   },
   {
     title: "Laser Ammo Sig P320/M17 Recoil Training Handgun",
@@ -332,6 +358,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-sig-m17/detail.png",
     ],
     stockQuantity: 10, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 48, lengthIn: 11, widthIn: 7, heightIn: 3 }, // TODO: measure actual packaging
   },
   {
     title: "Laser Ammo Sig P320/M18 Compact Recoil Training Handgun",
@@ -347,6 +374,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-sig-m18/side.png",
     ],
     stockQuantity: 10, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 44, lengthIn: 10, widthIn: 7, heightIn: 3 }, // TODO: measure actual packaging
   },
   {
     title: "Laser Ammo CZ Shadow 2 Recoil Training Handgun",
@@ -363,6 +391,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-cz-shadow-2/detail.png",
     ],
     stockQuantity: 8, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 52, lengthIn: 11, widthIn: 7, heightIn: 3 }, // TODO: measure actual packaging
   },
   {
     title: "Laser Ammo 2011 MK Recoil Training Handgun",
@@ -378,6 +407,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/la-2011-mk/detail.png",
     ],
     stockQuantity: 8, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 56, lengthIn: 12, widthIn: 8, heightIn: 3 }, // TODO: measure actual packaging
   },
 
   // ─── Training Rifles ───────────────────────────────────────
@@ -396,6 +426,7 @@ const PRODUCTS: SeedProduct[] = [
       "/images/kwa-ronin-t10/detail-1.png",
     ],
     stockQuantity: 12, // TODO: replace with real prod starting inventory
+    parcel: { weightOz: 160, lengthIn: 38, widthIn: 12, heightIn: 5 }, // TODO: measure actual packaging
   },
 
   // ─── Training Kits ─────────────────────────────────────────
@@ -492,6 +523,139 @@ const updateStoreCurrencies = createWorkflow(
     return new WorkflowResponse(stores);
   }
 );
+
+// ─── Shipping option builders ────────────────────────────────
+//
+// The workflow input type (CreateShippingOptionsWorkflowInput) is a
+// structural union across flat vs. calculated rows. Narrowing to it in
+// the helper signature ties the helpers to Medusa internals and churns
+// with upstream type tweaks. The helpers return loose records; the seed
+// casts once at the workflow call site via `as never`.
+
+function buildManualShippingOptions(
+  serviceZoneId: string,
+  shippingProfileId: string,
+  regionId: string
+): Record<string, unknown>[] {
+  const baseRules = [
+    { attribute: "enabled_in_store", value: "true", operator: "eq" },
+    { attribute: "is_return", value: "false", operator: "eq" },
+  ];
+  return [
+    {
+      name: "Standard Shipping",
+      price_type: "flat",
+      provider_id: "manual_manual",
+      service_zone_id: serviceZoneId,
+      shipping_profile_id: shippingProfileId,
+      type: { label: "Standard", description: "Ship in 2-3 days.", code: "standard" },
+      prices: [
+        { currency_code: "usd", amount: 10 },
+        { region_id: regionId, amount: 10 },
+      ],
+      rules: baseRules,
+    },
+    {
+      name: "Express Shipping",
+      price_type: "flat",
+      provider_id: "manual_manual",
+      service_zone_id: serviceZoneId,
+      shipping_profile_id: shippingProfileId,
+      type: { label: "Express", description: "Ship in 24 hours.", code: "express" },
+      prices: [
+        { currency_code: "usd", amount: 25 },
+        { region_id: regionId, amount: 25 },
+      ],
+      rules: baseRules,
+    },
+  ];
+}
+
+// Mirror of SHIPPO_FULFILLMENT_OPTIONS in src/modules/fulfillment-shippo/service.ts.
+// Kept as a local list so the seed script doesn't need to import from the
+// provider module (which pulls in the Shippo client and its fetch calls).
+const SHIPPO_SEED_OPTIONS = [
+  {
+    id: "usps__ground_advantage",
+    carrier: "usps",
+    servicelevel: "usps_ground_advantage",
+    label: "USPS Ground Advantage",
+    code: "usps_ground_advantage",
+    description: "USPS Ground Advantage — 2-5 business days.",
+  },
+  {
+    id: "usps__priority",
+    carrier: "usps",
+    servicelevel: "usps_priority",
+    label: "USPS Priority Mail",
+    code: "usps_priority",
+    description: "USPS Priority Mail — 1-3 business days.",
+  },
+  {
+    id: "ups__ground",
+    carrier: "ups",
+    servicelevel: "ups_ground",
+    label: "UPS Ground",
+    code: "ups_ground",
+    description: "UPS Ground — 1-5 business days.",
+  },
+  {
+    id: "ups__2nd_day_air",
+    carrier: "ups",
+    servicelevel: "ups_2nd_day_air",
+    label: "UPS 2nd Day Air",
+    code: "ups_2nd_day_air",
+    description: "UPS 2nd Day Air — 2 business days.",
+  },
+  {
+    id: "fedex__ground",
+    carrier: "fedex",
+    servicelevel: "fedex_ground",
+    label: "FedEx Ground",
+    code: "fedex_ground",
+    description: "FedEx Ground — 1-5 business days.",
+  },
+  {
+    id: "fedex__2day",
+    carrier: "fedex",
+    servicelevel: "fedex_2_day",
+    label: "FedEx 2Day",
+    code: "fedex_2day",
+    description: "FedEx 2Day — 2 business days.",
+  },
+];
+
+function buildShippoShippingOptions(
+  serviceZoneId: string,
+  shippingProfileId: string,
+  regionId: string
+): Record<string, unknown>[] {
+  const baseRules = [
+    { attribute: "enabled_in_store", value: "true", operator: "eq" },
+    { attribute: "is_return", value: "false", operator: "eq" },
+  ];
+  return SHIPPO_SEED_OPTIONS.map((opt) => ({
+    name: opt.label,
+    price_type: "calculated",
+    provider_id: "shippo_shippo",
+    service_zone_id: serviceZoneId,
+    shipping_profile_id: shippingProfileId,
+    type: { label: opt.label, description: opt.description, code: opt.code },
+    // Medusa's createShippingOptionsWorkflow still wants `prices` for a
+    // calculated option; a zero entry satisfies the schema. The real price
+    // comes from the provider's calculatePrice at checkout time.
+    prices: [
+      { currency_code: "usd", amount: 0 },
+      { region_id: regionId, amount: 0 },
+    ],
+    rules: baseRules,
+    data: {
+      id: opt.id,
+      carrier: opt.carrier,
+      servicelevel: opt.servicelevel,
+    },
+  }));
+}
 
 // ─── Seed function ───────────────────────────────────────────
 
@@ -629,14 +793,19 @@ export default async function seedDemoData({ container }: ExecArgs) {
     },
   });
 
-  await link.create({
-    [Modules.STOCK_LOCATION]: {
-      stock_location_id: stockLocation.id,
-    },
-    [Modules.FULFILLMENT]: {
-      fulfillment_provider_id: "manual_manual",
-    },
-  });
+  const providerIds = process.env.SHIPPO_API_KEY
+    ? ["manual_manual", "shippo_shippo"]
+    : ["manual_manual"];
+  for (const providerId of providerIds) {
+    await link.create({
+      [Modules.STOCK_LOCATION]: {
+        stock_location_id: stockLocation.id,
+      },
+      [Modules.FULFILLMENT]: {
+        fulfillment_provider_id: providerId,
+      },
+    });
+  }
 
   // ── Fulfillment & shipping ───────────────────────────────
 
@@ -686,79 +855,28 @@ export default async function seedDemoData({ container }: ExecArgs) {
     },
   });
 
+  const shippingOptionsInput = process.env.SHIPPO_API_KEY
+    ? buildShippoShippingOptions(
+        fulfillmentSet.service_zones[0].id,
+        shippingProfile.id,
+        region.id
+      )
+    : buildManualShippingOptions(
+        fulfillmentSet.service_zones[0].id,
+        shippingProfile.id,
+        region.id
+      );
+
   await createShippingOptionsWorkflow(container).run({
-    input: [
-      {
-        name: "Standard Shipping",
-        price_type: "flat",
-        provider_id: "manual_manual",
-        service_zone_id: fulfillmentSet.service_zones[0].id,
-        shipping_profile_id: shippingProfile.id,
-        type: {
-          label: "Standard",
-          description: "Ship in 2-3 days.",
-          code: "standard",
-        },
-        prices: [
-          {
-            currency_code: "usd",
-            amount: 10,
-          },
-          {
-            region_id: region.id,
-            amount: 10,
-          },
-        ],
-        rules: [
-          {
-            attribute: "enabled_in_store",
-            value: "true",
-            operator: "eq",
-          },
-          {
-            attribute: "is_return",
-            value: "false",
-            operator: "eq",
-          },
-        ],
-      },
-      {
-        name: "Express Shipping",
-        price_type: "flat",
-        provider_id: "manual_manual",
-        service_zone_id: fulfillmentSet.service_zones[0].id,
-        shipping_profile_id: shippingProfile.id,
-        type: {
-          label: "Express",
-          description: "Ship in 24 hours.",
-          code: "express",
-        },
-        prices: [
-          {
-            currency_code: "usd",
-            amount: 25,
-          },
-          {
-            region_id: region.id,
-            amount: 25,
-          },
-        ],
-        rules: [
-          {
-            attribute: "enabled_in_store",
-            value: "true",
-            operator: "eq",
-          },
-          {
-            attribute: "is_return",
-            value: "false",
-            operator: "eq",
-          },
-        ],
-      },
-    ],
+    // Workflow input DTO is a structural union; the helpers build rows in
+    // its shape but a cast is the cleanest way to bridge them.
+    input: shippingOptionsInput as never,
   });
-  logger.info("Finished seeding fulfillment data.");
+  logger.info(
+    process.env.SHIPPO_API_KEY
+      ? "Finished seeding Shippo calculated shipping options."
+      : "Finished seeding manual flat shipping options."
+  );
 
   await linkSalesChannelsToStockLocationWorkflow(container).run({
     input: {
@@ -865,6 +983,18 @@ export default async function seedDemoData({ container }: ExecArgs) {
         ...(p.msrpAmount != null
           ? { metadata: { msrp_amount: p.msrpAmount } }
           : {}),
+        // Parcel dims/weight go on the variant; Medusa propagates them to the
+        // auto-created inventory_item, which is what the Shippo fulfillment
+        // provider reads at rate-calc time (both for non-bundles and when
+        // bundles expand to component parcels via their inventory_items).
+        ...(p.parcel
+          ? {
+              weight: p.parcel.weightOz,
+              length: p.parcel.lengthIn,
+              width: p.parcel.widthIn,
+              height: p.parcel.heightIn,
+            }
+          : {}),
         ...extraVariantFields,
       },
     ],
@@ -894,6 +1024,35 @@ export default async function seedDemoData({ container }: ExecArgs) {
   }>) {
     const itemId = v.inventory_items?.[0]?.inventory_item_id;
     if (v.sku && itemId) inventoryItemBySku.set(v.sku, itemId);
+  }
+
+  // Derive parcel dims for each bundle by folding over its components:
+  // weight = sum of component weights, box dim = max of component dims.
+  // This is the "bundle ships as one parcel sized to fit the biggest
+  // component" model — simpler than true pass-through and avoids needing
+  // cross-module query access from the fulfillment provider.
+  const parcelBySku = new Map<string, NonNullable<SeedProduct["parcel"]>>();
+  for (const p of nonBundles) {
+    if (p.parcel) parcelBySku.set(p.sku, p.parcel);
+  }
+  for (const b of bundles) {
+    let weightOz = 0;
+    let lengthIn = 0;
+    let widthIn = 0;
+    let heightIn = 0;
+    for (const c of b.components ?? []) {
+      const pc = parcelBySku.get(c.sku);
+      if (!pc) {
+        throw new Error(
+          `Bundle ${b.sku} component ${c.sku} has no parcel data; cannot derive bundle dims`
+        );
+      }
+      weightOz += pc.weightOz * c.quantity;
+      lengthIn = Math.max(lengthIn, pc.lengthIn);
+      widthIn = Math.max(widthIn, pc.widthIn);
+      heightIn = Math.max(heightIn, pc.heightIn);
+    }
+    b.parcel = { weightOz, lengthIn, widthIn, heightIn };
   }
 
   // Pass 2 — bundle products. Each variant is an inventory kit of existing inventory_items.

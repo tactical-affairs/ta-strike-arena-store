@@ -63,6 +63,7 @@ The storefront connects to this backend using the Medusa JS SDK with a publishab
    |----------|-------------|
    | `S3_ACCESS_KEY_ID` + five other `S3_*` vars | Switches file uploads from `./static/` (local) to Cloudflare R2 / S3. Required for production. |
    | `FLUIDPAY_API_KEY`, `FLUIDPAY_PUBLIC_KEY`, `FLUIDPAY_BASE_URL`, `FLUIDPAY_CAPTURE_MODE` | Enables the FluidPay payment provider. See `src/modules/payment-fluidpay/README.md`. |
+   | `SHIPPO_API_KEY`, `SHIPPO_FROM_*`, `SHIPPO_WEBHOOK_SECRET` | Enables the Shippo fulfillment provider for live carrier rates, label purchase, and tracking webhooks. Unset → backend falls back to flat-rate shipping. See `src/modules/fulfillment-shippo/README.md`. |
 
 4. Create the database and run migrations (first time only):
 
@@ -102,9 +103,11 @@ Quick checklist:
 3. Set `STORE_CORS`, `ADMIN_CORS`, `AUTH_CORS` to the production domains.
 4. Set all six `S3_*` env vars to switch file uploads to Cloudflare R2.
 5. Set all four `FLUIDPAY_*` vars — including `FLUIDPAY_BASE_URL=https://app.fluidpay.com` (NOT sandbox) and live `pub_.../api_...` credentials — to register the FluidPay payment provider.
-6. Run `npx medusa db:setup` + `npm run seed` once (from a local shell with prod env loaded) to populate the catalog. Replace dev `stockQuantity` values in `src/scripts/seed.ts` with real starting inventory first (look for `// TODO` markers). After seeding, evolve the catalog via the Admin UI or one-off `medusa exec` scripts — **never** re-run `npm run seed` against prod.
-7. Create an admin user (`npx medusa user ...`) and attach `pp_fluidpay_fluidpay` to the USA region via Admin UI or Admin API (see CLAUDE.md).
-8. Hand the publishable API key and FluidPay public key off to the storefront's `.env.production` — see [`ta-strike-arena-website/README.md`](../ta-strike-arena-website/README.md#deploy-to-github-pages).
+6. Set `SHIPPO_API_KEY=shippo_live_...` plus `SHIPPO_FROM_*` (warehouse address) to register the Shippo fulfillment provider. See CLAUDE.md for the full variable list and the separate step to register the tracking webhook (post-deploy, in the Shippo dashboard → Settings → Webhooks; paste the returned signing secret into `SHIPPO_WEBHOOK_SECRET` and redeploy).
+7. Replace dev `parcel` dims in `src/scripts/seed.ts` with real packaged weight + L×W×H before seeding — wrong dims cause carriers to reject shipments or charge "dimensional weight" penalties (look for `// TODO: measure actual packaging` markers).
+8. Run `npx medusa db:setup` + `npm run seed` once (from a local shell with prod env loaded) to populate the catalog. Replace dev `stockQuantity` values first too (look for `// TODO: replace with real prod starting inventory`). After seeding, evolve the catalog via the Admin UI or one-off `medusa exec` scripts — **never** re-run `npm run seed` against prod.
+9. Create an admin user (`npx medusa user ...`) and attach `pp_fluidpay_fluidpay` to the USA region via Admin UI or Admin API (see CLAUDE.md).
+10. Hand the publishable API key and FluidPay public key off to the storefront's `.env.production` — see [`ta-strike-arena-website/README.md`](../ta-strike-arena-website/README.md#deploy-to-github-pages).
 
 ## Scripts
 
@@ -133,7 +136,7 @@ The seed script (`src/scripts/seed.ts`) creates the Strike Arena catalog:
 
 - **1 region**: USA (USD)
 - **1 stock location**
-- **Shipping options**: flat-rate
+- **Shipping options**: Shippo calculated rates (USPS / UPS / FedEx) when `SHIPPO_API_KEY` is set; otherwise two flat options (Standard $10 / Express $25)
 - **6 product categories**: Targets, Packages, Laser Attachments, Training Handguns, Training Rifles, Training Kits
 - **22 products** — 15 standalone (targets, console, handguns, rifle, laser kits) and 7 **bundles** (Home/Pro target packages, Starter Handgun/Rifle Kits) that use Medusa's native [Inventory Kits](https://docs.medusajs.com/resources/commerce-modules/inventory/inventory-kit) feature. Bundle availability is automatically computed as `min(component_stock / required_quantity)`, and each component's stock is decremented when a bundle is sold. See `CLAUDE.md` for the bundle mapping table and how to add new ones.
 - **Realistic per-SKU stock quantities** (e.g. 60 Home Targets, 30 Pro Targets, 15 Training Consoles, 8–15 of each training firearm) so bundle constraints are observable during testing
@@ -155,6 +158,11 @@ Set `S3_*` vars on Railway (prod) to swap providers — see `CLAUDE.md` for the 
 
 - **FluidPay** — custom module in `src/modules/payment-fluidpay/`. Registered only when `FLUIDPAY_API_KEY` is set. See the module's [README](src/modules/payment-fluidpay/README.md) for the integration checklist.
 - **Authorize.net** — historically handled outside Medusa (Accept.js on the storefront). Being replaced by FluidPay.
+
+## Fulfillment providers
+
+- **manual_manual** — Medusa's built-in flat-rate provider. Always registered; acts as the fallback shipping option when Shippo credentials aren't configured.
+- **shippo_shippo** — custom module in `src/modules/fulfillment-shippo/`. Registered only when `SHIPPO_API_KEY` is set. Handles live rates across USPS / UPS / FedEx, label purchase at fulfill time, returns, and tracking via `POST /hooks/shippo`. See the module's [README](src/modules/fulfillment-shippo/README.md) for the full list of supported carriers, box templates, and sandbox-testing steps.
 
 ## Project Structure
 
