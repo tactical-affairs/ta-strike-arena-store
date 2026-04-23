@@ -170,6 +170,14 @@ Set `S3_*` vars on Railway (prod) to swap providers — see `CLAUDE.md` for the 
 - **tp_system** — Medusa's built-in manual provider. Always registered as a fallback; with no rates configured (the default) it reports $0 tax on every cart.
 - **tp_taxjar_taxjar** — custom module in `src/modules/tax-taxjar/`. Registered only when `TAXJAR_API_KEY` is set. Live sales-tax calc via TaxJar's `/taxes` endpoint and nexus-insights sync via `src/subscribers/taxjar-order-sync.ts`. Nexus states are configured in the TaxJar dashboard — phase 1 is WA-only. See the module's [README](src/modules/tax-taxjar/README.md) for sandbox setup.
 
+## Procurement module
+
+Custom top-level module at `src/modules/procurement/` for purchase orders, FIFO inventory lots, landed-cost tracking, and the COGS ledger. Always registered. Powers the inventory-valuation, COGS-by-period, gross-margin, and slow-mover reports under `/admin/reports`, and the cost-basis widget on product detail pages.
+
+FIFO consumption runs on `order.fulfillment_created` (writes `CogsEntry` rows, decrements oldest lots first); reversal runs on `order.return_received` (reverses CogsEntry, creates restock lots at original cost, preserving cost mix across multi-lot returns).
+
+See the module's [README](src/modules/procurement/README.md) for entity details, service methods, and admin API surface. Day-to-day usage (PO creation, receiving, adjustments, reports, monthly CSV workflow) is in [OPERATIONS.md](OPERATIONS.md).
+
 ## Project Structure
 
 All customization goes in `src/`:

@@ -166,6 +166,24 @@ Provider activation env vars (see `.env.template` for the full list):
 
 **Prod activation**: sign up on a paid TaxJar plan, add WA as a live nexus state with the real permit number, set `TAXJAR_API_KEY=<live>` + `TAXJAR_SANDBOX=false` on Railway, redeploy. Optionally enable AutoFile for WA in the TaxJar dashboard — requires an ACH authorization and costs ~$35-50 per filing (WA will likely be quarterly or annual at launch volume).
 
+### Procurement (PO + FIFO COGS)
+
+Custom top-level module at `src/modules/procurement/` that owns purchase orders, inventory lots, and the COGS ledger. Always on — `medusa-config.ts` registers it unconditionally. See the module's [README](src/modules/procurement/README.md) for the full entity/workflow/API surface.
+
+**Data model**: `Supplier`, `PurchaseOrder`, `PurchaseOrderLine`, `PoAdjustment`, `InventoryLot` (FIFO cost layer), `CogsEntry` (ledger row). Three link files in `src/links/` wire these to core Medusa (`product.variant`, `inventory.inventory_item`, `order.order_line_item`).
+
+**Landed cost**: PO-level adjustments (shipping, discount, tariff, other) are allocated across lines by extended value (GAAP-standard) at receive time. Each new `InventoryLot.unit_cost` is the landed cost, not the supplier quote. Adjustment edits only affect lots received after the edit — lots already created keep their original landed cost (accounting never rewrites history).
+
+**Subscribers**: `procurement-fulfillment-sync` consumes FIFO lots on `order.fulfillment_created` and writes `CogsEntry` rows; `procurement-return-sync` reverses entries on `order.return_received` and creates restock lots at the original cost (one per distinct cost segment, preserving cost mix). Both follow the taxjar-order-sync pattern: try/catch per line, never block the fulfillment/return on sync failure.
+
+**Admin UI**: `/suppliers`, `/purchase-orders`, `/purchase-orders/[id]`, and `/reports` (four tabs: inventory valuation, COGS by period, gross margin, slow movers — each with CSV export). Plus a cost-basis widget on the product detail page showing per-variant weighted-average cost + inventory value.
+
+**SKU-match helper**: `src/api/admin/procurement/reports/_display-lookup.ts` resolves the owning variant for an inventory_item by matching `inventory_item.sku` to `variant.sku`. A length-based "non-bundle" filter is insufficient because single-component bundle variants also have `inventory_items.length === 1` — SKU match is the authoritative disambiguator.
+
+**Seed**: `seed.ts` creates a demo supplier and one auto-received opening-balance PO per non-bundle SKU at `unit_cost = 0.6 × price` (placeholder — marked with TODO for prod). Production bootstraps via a separate CSV-import script.
+
+**Operations**: receiving workflows, adjustment handling, report cadence, and monthly CSV handoff are all documented in [`OPERATIONS.md`](OPERATIONS.md).
+
 ### Build Output
 
 TypeScript compiles to `.medusa/server/` (git-ignored). The admin dashboard compiles to `.medusa/admin/`. Do not edit files in `.medusa/`.
