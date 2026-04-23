@@ -79,9 +79,10 @@ const fmt$ = (n: number | null | undefined) =>
 const fmtPct = (n: number | null | undefined) =>
   n == null || !Number.isFinite(n) ? "—" : `${n.toFixed(1)}%`;
 
-function toCSV(rows: Record<string, unknown>[]): string {
-  if (rows.length === 0) return "";
-  const headers = Object.keys(rows[0]);
+function toCSV(
+  rows: Record<string, unknown>[],
+  headers: string[],
+): string {
   const escape = (v: unknown): string => {
     if (v == null) return "";
     const s = String(v);
@@ -90,10 +91,14 @@ function toCSV(rows: Record<string, unknown>[]): string {
     }
     return s;
   };
-  return [
-    headers.join(","),
-    ...rows.map((r) => headers.map((h) => escape(r[h])).join(",")),
-  ].join("\n");
+  // Always emit the header row so the file is never zero-bytes even
+  // when there's nothing to export (e.g., slow-movers with no lots
+  // over threshold).
+  const lines = [headers.join(",")];
+  for (const r of rows) {
+    lines.push(headers.map((h) => escape(r[h])).join(","));
+  }
+  return lines.join("\n") + "\n";
 }
 
 function download(filename: string, content: string): void {
@@ -150,37 +155,62 @@ const ReportsPage = () => {
   );
 };
 
+const VALUATION_HEADERS = [
+  "sku",
+  "product",
+  "variant",
+  "active_lots",
+  "qty_on_hand",
+  "weighted_avg_cost",
+  "inventory_value",
+];
+
 function ValuationPanel() {
   const [data, setData] = useState<ValuationResp | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exportBusy, setExportBusy] = useState(false);
+
+  const fetchData = async (): Promise<ValuationResp | null> => {
+    const res = await fetch(
+      "/admin/procurement/reports/inventory-valuation",
+      { credentials: "include" },
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as ValuationResp;
+  };
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch(
-          "/admin/procurement/reports/inventory-valuation",
-          { credentials: "include" },
-        );
-        setData(await res.json());
+        setData(await fetchData());
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  const exportCsv = () => {
-    if (!data) return;
-    const rows = data.rows.map((r) => ({
-      sku: r.sku ?? "",
-      product: r.product_title ?? "",
-      variant: r.variant_title ?? "",
-      active_lots: r.active_lots,
-      qty_on_hand: r.qty_on_hand,
-      weighted_avg_cost: r.weighted_avg_cost ?? "",
-      inventory_value: r.inventory_value,
-    }));
-    download(`inventory-valuation-${todayISO()}.csv`, toCSV(rows));
+  const exportCsv = async () => {
+    setExportBusy(true);
+    try {
+      // Fetch fresh at click time — don't rely on whatever's in state.
+      const fresh = await fetchData();
+      const rows = (fresh?.rows ?? []).map((r) => ({
+        sku: r.sku ?? "",
+        product: r.product_title ?? "",
+        variant: r.variant_title ?? "",
+        active_lots: r.active_lots,
+        qty_on_hand: r.qty_on_hand,
+        weighted_avg_cost: r.weighted_avg_cost ?? "",
+        inventory_value: r.inventory_value,
+      }));
+      download(
+        `inventory-valuation-${todayISO()}.csv`,
+        toCSV(rows, VALUATION_HEADERS),
+      );
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   if (loading) return <Text>Loading…</Text>;
@@ -192,8 +222,13 @@ function ValuationPanel() {
         <Text size="small" className="text-ui-fg-subtle">
           Snapshot of currently stocked inventory valued at FIFO cost.
         </Text>
-        <Button variant="secondary" size="small" onClick={exportCsv}>
-          Export CSV
+        <Button
+          variant="secondary"
+          size="small"
+          onClick={exportCsv}
+          disabled={exportBusy}
+        >
+          {exportBusy ? "Exporting…" : "Export CSV"}
         </Button>
       </div>
       <Table>
@@ -243,20 +278,39 @@ function ValuationPanel() {
   );
 }
 
+const COGS_HEADERS = [
+  "sku",
+  "product",
+  "variant",
+  "qty_sold",
+  "cogs_gross",
+  "cogs_reversed",
+  "cogs_net",
+];
+
 function CogsPanel() {
   const [from, setFrom] = useState(firstOfMonthISO());
   const [to, setTo] = useState(todayISO());
   const [data, setData] = useState<CogsResp | null>(null);
   const [loading, setLoading] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+
+  const fetchData = async (
+    fromDate: string,
+    toDate: string,
+  ): Promise<CogsResp | null> => {
+    const res = await fetch(
+      `/admin/procurement/reports/cogs?from=${fromDate}&to=${toDate}`,
+      { credentials: "include" },
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as CogsResp;
+  };
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch(
-        `/admin/procurement/reports/cogs?from=${from}&to=${to}`,
-        { credentials: "include" },
-      );
-      setData(await res.json());
+      setData(await fetchData(from, to));
     } finally {
       setLoading(false);
     }
@@ -267,18 +321,23 @@ function CogsPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const exportCsv = () => {
-    if (!data) return;
-    const rows = data.rows.map((r) => ({
-      sku: r.sku ?? "",
-      product: r.product_title ?? "",
-      variant: r.variant_title ?? "",
-      qty_sold: r.qty_sold,
-      cogs_gross: r.cogs_gross,
-      cogs_reversed: r.cogs_reversed,
-      cogs_net: r.cogs_net,
-    }));
-    download(`cogs-${from}-to-${to}.csv`, toCSV(rows));
+  const exportCsv = async () => {
+    setExportBusy(true);
+    try {
+      const fresh = await fetchData(from, to);
+      const rows = (fresh?.rows ?? []).map((r) => ({
+        sku: r.sku ?? "",
+        product: r.product_title ?? "",
+        variant: r.variant_title ?? "",
+        qty_sold: r.qty_sold,
+        cogs_gross: r.cogs_gross,
+        cogs_reversed: r.cogs_reversed,
+        cogs_net: r.cogs_net,
+      }));
+      download(`cogs-${from}-to-${to}.csv`, toCSV(rows, COGS_HEADERS));
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   return (
@@ -296,8 +355,13 @@ function CogsPanel() {
           Apply
         </Button>
         <div className="flex-1" />
-        <Button variant="secondary" size="small" onClick={exportCsv} disabled={!data}>
-          Export CSV
+        <Button
+          variant="secondary"
+          size="small"
+          onClick={exportCsv}
+          disabled={exportBusy}
+        >
+          {exportBusy ? "Exporting…" : "Export CSV"}
         </Button>
       </div>
       {loading || !data ? (
@@ -350,20 +414,40 @@ function CogsPanel() {
   );
 }
 
+const MARGIN_HEADERS = [
+  "sku",
+  "product",
+  "variant",
+  "qty_sold",
+  "revenue",
+  "cogs",
+  "gross_profit",
+  "margin_pct",
+];
+
 function MarginPanel() {
   const [from, setFrom] = useState(firstOfMonthISO());
   const [to, setTo] = useState(todayISO());
   const [data, setData] = useState<MarginResp | null>(null);
   const [loading, setLoading] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+
+  const fetchData = async (
+    fromDate: string,
+    toDate: string,
+  ): Promise<MarginResp | null> => {
+    const res = await fetch(
+      `/admin/procurement/reports/gross-margin?from=${fromDate}&to=${toDate}`,
+      { credentials: "include" },
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as MarginResp;
+  };
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch(
-        `/admin/procurement/reports/gross-margin?from=${from}&to=${to}`,
-        { credentials: "include" },
-      );
-      setData(await res.json());
+      setData(await fetchData(from, to));
     } finally {
       setLoading(false);
     }
@@ -374,19 +458,27 @@ function MarginPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const exportCsv = () => {
-    if (!data) return;
-    const rows = data.rows.map((r) => ({
-      sku: r.sku ?? "",
-      product: r.product_title ?? "",
-      variant: r.variant_title ?? "",
-      qty_sold: r.qty_sold,
-      revenue: r.revenue,
-      cogs: r.cogs,
-      gross_profit: r.gross_profit,
-      margin_pct: r.margin_pct != null ? r.margin_pct.toFixed(2) : "",
-    }));
-    download(`gross-margin-${from}-to-${to}.csv`, toCSV(rows));
+  const exportCsv = async () => {
+    setExportBusy(true);
+    try {
+      const fresh = await fetchData(from, to);
+      const rows = (fresh?.rows ?? []).map((r) => ({
+        sku: r.sku ?? "",
+        product: r.product_title ?? "",
+        variant: r.variant_title ?? "",
+        qty_sold: r.qty_sold,
+        revenue: r.revenue,
+        cogs: r.cogs,
+        gross_profit: r.gross_profit,
+        margin_pct: r.margin_pct != null ? r.margin_pct.toFixed(2) : "",
+      }));
+      download(
+        `gross-margin-${from}-to-${to}.csv`,
+        toCSV(rows, MARGIN_HEADERS),
+      );
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   return (
@@ -404,8 +496,13 @@ function MarginPanel() {
           Apply
         </Button>
         <div className="flex-1" />
-        <Button variant="secondary" size="small" onClick={exportCsv} disabled={!data}>
-          Export CSV
+        <Button
+          variant="secondary"
+          size="small"
+          onClick={exportCsv}
+          disabled={exportBusy}
+        >
+          {exportBusy ? "Exporting…" : "Export CSV"}
         </Button>
       </div>
       {loading || !data ? (
@@ -461,19 +558,37 @@ function MarginPanel() {
   );
 }
 
+const SLOW_HEADERS = [
+  "sku",
+  "product",
+  "variant",
+  "lot_id",
+  "received_at",
+  "age_days",
+  "qty_remaining",
+  "unit_cost",
+  "stuck_value",
+];
+
 function SlowPanel() {
   const [days, setDays] = useState("90");
   const [data, setData] = useState<SlowResp | null>(null);
   const [loading, setLoading] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+
+  const fetchData = async (d: string): Promise<SlowResp | null> => {
+    const res = await fetch(
+      `/admin/procurement/reports/slow-movers?days=${encodeURIComponent(d)}`,
+      { credentials: "include" },
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as SlowResp;
+  };
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch(
-        `/admin/procurement/reports/slow-movers?days=${encodeURIComponent(days)}`,
-        { credentials: "include" },
-      );
-      setData(await res.json());
+      setData(await fetchData(days));
     } finally {
       setLoading(false);
     }
@@ -484,20 +599,28 @@ function SlowPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const exportCsv = () => {
-    if (!data) return;
-    const rows = data.rows.map((r) => ({
-      sku: r.sku ?? "",
-      product: r.product_title ?? "",
-      variant: r.variant_title ?? "",
-      lot_id: r.lot_id,
-      received_at: r.received_at,
-      age_days: r.age_days,
-      qty_remaining: r.qty_remaining,
-      unit_cost: r.unit_cost,
-      stuck_value: r.stuck_value,
-    }));
-    download(`slow-movers-${days}d-${todayISO()}.csv`, toCSV(rows));
+  const exportCsv = async () => {
+    setExportBusy(true);
+    try {
+      const fresh = await fetchData(days);
+      const rows = (fresh?.rows ?? []).map((r) => ({
+        sku: r.sku ?? "",
+        product: r.product_title ?? "",
+        variant: r.variant_title ?? "",
+        lot_id: r.lot_id,
+        received_at: r.received_at,
+        age_days: r.age_days,
+        qty_remaining: r.qty_remaining,
+        unit_cost: r.unit_cost,
+        stuck_value: r.stuck_value,
+      }));
+      download(
+        `slow-movers-${days}d-${todayISO()}.csv`,
+        toCSV(rows, SLOW_HEADERS),
+      );
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   return (
@@ -511,8 +634,13 @@ function SlowPanel() {
           Apply
         </Button>
         <div className="flex-1" />
-        <Button variant="secondary" size="small" onClick={exportCsv} disabled={!data}>
-          Export CSV
+        <Button
+          variant="secondary"
+          size="small"
+          onClick={exportCsv}
+          disabled={exportBusy}
+        >
+          {exportBusy ? "Exporting…" : "Export CSV"}
         </Button>
       </div>
       {loading || !data ? (
