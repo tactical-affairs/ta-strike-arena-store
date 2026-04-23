@@ -17,6 +17,7 @@ drift. Never let it rot — a wrong SOP is worse than none.
 - [Access + credentials](#access--credentials)
 - [Morning routine](#morning-routine)
 - [Products + inventory (receiving)](#products--inventory-receiving)
+- [Purchase orders + cost tracking](#purchase-orders--cost-tracking)
 - [Order lifecycle](#order-lifecycle)
 - [Fulfillment](#fulfillment)
 - [Customer events](#customer-events)
@@ -31,6 +32,7 @@ drift. Never let it rot — a wrong SOP is worse than none.
   - [Exchange](#exchange)
 - [Tax operations](#tax-operations)
 - [Reconciliation](#reconciliation)
+- [Reports](#reports)
 - [Troubleshooting](#troubleshooting)
 - [Emergency procedures](#emergency-procedures)
 - [Appendix: status references](#appendix-status-references)
@@ -188,6 +190,111 @@ Give the developer:
 
 They'll add the bundle and redeploy. Expect ~a day of lead time for
 new bundles.
+
+---
+
+## Purchase orders + cost tracking
+
+Every unit we sell is tied to a specific purchase order at a specific
+landed cost (unit cost from the supplier plus allocated shipping,
+tariffs, and discounts). That's what powers the COGS, gross margin,
+and inventory valuation reports.
+
+### Creating a purchase order (PO)
+
+Sidebar → **Purchase Orders → New purchase order**.
+
+1. Pick the supplier. Create one from **Suppliers → Add supplier**
+   first if the vendor is new.
+2. Optional: fill in the expected delivery date and any notes.
+3. Add line items — one per SKU you're buying. For each line:
+   - Pick the product variant from the dropdown.
+   - Enter the quantity ordered.
+   - Enter the unit cost the supplier is charging (pre-shipping, pre-tariff).
+4. **Adjustments** — if the supplier is charging for shipping,
+   applying a discount, or passing on tariffs/duties, add those as
+   separate lines. Pick the type (shipping / discount / tariff / other),
+   enter the amount, add an optional note. The drawer shows the
+   running total (lines subtotal + adjustments = PO total).
+5. **Create PO**.
+
+### Receiving stock
+
+When the shipment arrives:
+
+1. Sidebar → **Purchase Orders** → click the PO number
+2. **Receive items**
+3. Pick the location (defaults to "Strike Arena Warehouse")
+4. Enter the quantity received on each line. A line can be fully or
+   partially received; partial receipts keep the PO in `partial`
+   status until the rest lands.
+5. **Record receipt** — this:
+   - Creates a new FIFO inventory lot at the **landed** cost
+     (supplier unit cost + allocated share of PO adjustments by
+     extended value)
+   - Bumps Medusa's on-hand inventory for that location
+   - Updates the PO line's received count + PO status
+
+### Adding an adjustment post-hoc
+
+Shipping invoices often arrive after the PO was already created and
+received. That's fine:
+
+1. Open the PO detail page
+2. In the **Adjustments** section at the bottom, pick the type and
+   amount → **Add**
+3. The table now shows the new landed unit cost with the delta from
+   the original in parens (e.g., `$152.00 (+$2.00)`)
+
+**Important rule**: adjustments only affect lots received **after**
+the change. Lots already received keep their original landed cost.
+That mirrors accounting practice — we don't rewrite history. Any
+variance between the original landed cost and the true final cost
+is absorbed into future receipts or posted as a manual journal
+entry by the accountant.
+
+### Viewing cost basis per product
+
+Sidebar → **Products** → open any product → scroll past the standard
+details. The **Cost basis (FIFO)** panel shows per-variant:
+
+- Active lot count
+- Qty on hand (sum of remaining quantities in active lots)
+- Weighted-average cost
+- Total inventory value
+
+For a full per-variant breakdown across all products, use the
+[Inventory valuation report](#reports) instead.
+
+### When a customer order fulfills
+
+Two things happen automatically when you click **Create Fulfillment**
+on an order in the admin:
+
+1. Shippo buys the shipping label (same flow as before)
+2. The oldest active inventory lots for each SKU are decremented by
+   the fulfilled quantity, and a COGS entry is posted to the ledger
+   at each lot's unit cost
+
+You don't need to do anything extra. The COGS entries show up in the
+[COGS by period report](#reports) and the [Gross margin report](#reports)
+immediately.
+
+### When a return is received
+
+When ops marks a return as received, the related COGS entries are
+reversed automatically. For each returned item:
+
+- **Resellable**: a new active inventory lot is created at the
+  original cost (re-entering the FIFO queue at "now" so it's sold
+  before newer stock) and on-hand inventory is bumped back up.
+- **Damaged**: the cost is still reversed out of COGS (accounting-
+  speaking: it's a loss, not a sale), but no lot is created — the
+  unit is gone.
+
+The condition is set via the return item's `metadata.condition` field
+in the admin UI. Default if unset: `resellable`. (Dedicated dropdown
+is a planned improvement.)
 
 ---
 
@@ -585,7 +692,93 @@ CSV). Hand off to accountant with:
 - Medusa CSV (all orders)
 - FluidPay annual summary (transactions tab → export)
 - TaxJar annual report (dashboard → Reports → annual)
+- Medusa **Reports** (see next section): inventory valuation at
+  year-end, full-year COGS, and gross margin by product
 - 1099-K from FluidPay (for the business)
+
+---
+
+## Reports
+
+Sidebar → **Reports** — four reports with a CSV export button on each.
+All four are derived from the purchase orders + inventory lots +
+COGS ledger; no manual data entry needed beyond the POs themselves.
+
+### Inventory valuation
+
+**What it tells you**: dollar value of everything sitting in the
+warehouse right now, at FIFO cost.
+
+Columns: product, SKU, active lots, qty on hand, weighted-average
+unit cost, inventory value. Total at the bottom.
+
+**When to run**: month-end and year-end for the accountant
+(balance-sheet "inventory on hand"). Also during the
+[morning routine](#morning-routine) if anything looks off in stock
+numbers.
+
+### COGS by period
+
+**What it tells you**: cost of goods sold within a date range, by
+product.
+
+Columns: product, SKU, qty sold, gross COGS, reversed (returns), net
+COGS. Defaults to the current calendar month.
+
+**When to run**: monthly, on the 1st-5th, for the previous month.
+Hand the CSV to the accountant for the income-statement COGS line.
+
+### Gross margin
+
+**What it tells you**: revenue minus COGS by product, with margin %.
+
+Columns: product, SKU, qty sold, revenue, COGS, gross profit, margin %.
+
+Revenue is pre-tax, pre-shipping (item-level unit_price × qty).
+Shipping revenue and tax collected are NOT included — those are
+separate lines on the income statement.
+
+**When to run**: monthly, alongside the COGS report. Look for
+products with low or negative margins — typical causes:
+- Supplier cost rose without a corresponding price increase on the
+  storefront
+- Landed cost understated (missing shipping/tariff adjustment on a PO)
+- Pricing error on the storefront
+
+### Slow movers
+
+**What it tells you**: active inventory lots older than N days that
+still have units remaining.
+
+Columns: product, SKU, lot ID, received-at date, age in days, qty
+remaining, unit cost, stuck value.
+
+**When to run**: monthly. Default threshold is 90 days. Trim to 180
+days for slow-turn items, 30 days for fast-turn.
+
+**What to do with it**:
+- 30-60 days stuck: consider promotion / bundle pricing
+- 60-180 days: markdown / clearance
+- 180+ days: write-off candidate (open an inventory adjustment with
+  the developer to mark those lots as damaged so they exit the FIFO
+  queue and show up in loss reports)
+
+### Monthly CSV workflow
+
+On the first business day of each month, for the previous month:
+
+1. **Reports → Inventory valuation → Export CSV**. Save as
+   `valuation-YYYY-MM.csv`. This is your closing balance for the
+   month just ended.
+2. **Reports → COGS → set the date range to the full previous month
+   → Apply → Export CSV**. Save as `cogs-YYYY-MM.csv`.
+3. **Reports → Gross margin → same date range → Export CSV**. Save as
+   `margin-YYYY-MM.csv`.
+4. **Reports → Slow movers → set days to 90 → Apply → Export CSV**.
+   Save as `slow-movers-YYYY-MM.csv`.
+5. Email all four CSVs to the accountant along with the TaxJar +
+   FluidPay + Medusa Orders exports from the
+   [monthly reconciliation](#monthly-three-way-cross-check).
 
 ---
 
