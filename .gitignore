@@ -27,3 +27,6 @@ build
 
 # Local file provider uploads (dev only; prod uses S3/R2)
 static
+
+# Claude Code runtime
+.claude/scheduled_tasks.lock
