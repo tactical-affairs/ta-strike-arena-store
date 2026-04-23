@@ -82,6 +82,40 @@ if (paymentProviders.length > 0) {
   })
 }
 
+if (process.env.TAXJAR_API_KEY) {
+  modules.push({
+    resolve: "@medusajs/medusa/tax",
+    options: {
+      providers: [
+        {
+          resolve: "./src/modules/tax-taxjar",
+          id: "taxjar",
+          options: {
+            apiKey: process.env.TAXJAR_API_KEY,
+            sandbox: process.env.TAXJAR_SANDBOX !== "false",
+            fromAddress: {
+              country: "US",
+              zip:
+                process.env.TAXJAR_FROM_ZIP ??
+                process.env.SHIPPO_FROM_ZIP ??
+                "",
+              state:
+                process.env.TAXJAR_FROM_STATE ??
+                process.env.SHIPPO_FROM_STATE ??
+                "",
+              city:
+                process.env.TAXJAR_FROM_CITY ?? process.env.SHIPPO_FROM_CITY,
+              street:
+                process.env.TAXJAR_FROM_STREET1 ??
+                process.env.SHIPPO_FROM_STREET1,
+            },
+          },
+        },
+      ],
+    },
+  })
+}
+
 module.exports = defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,

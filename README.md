@@ -164,6 +164,11 @@ Set `S3_*` vars on Railway (prod) to swap providers — see `CLAUDE.md` for the 
 - **manual_manual** — Medusa's built-in flat-rate provider. Always registered; acts as the fallback shipping option when Shippo credentials aren't configured.
 - **shippo_shippo** — custom module in `src/modules/fulfillment-shippo/`. Registered only when `SHIPPO_API_KEY` is set. Handles live rates across USPS / UPS / FedEx, label purchase at fulfill time, returns, and tracking via `POST /hooks/shippo`. See the module's [README](src/modules/fulfillment-shippo/README.md) for the full list of supported carriers, box templates, and sandbox-testing steps.
 
+## Tax providers
+
+- **tp_system** — Medusa's built-in manual provider. Always registered as a fallback; with no rates configured (the default) it reports $0 tax on every cart.
+- **tp_taxjar_taxjar** — custom module in `src/modules/tax-taxjar/`. Registered only when `TAXJAR_API_KEY` is set. Live sales-tax calc via TaxJar's `/taxes` endpoint and nexus-insights sync via `src/subscribers/taxjar-order-sync.ts`. Nexus states are configured in the TaxJar dashboard — phase 1 is WA-only. See the module's [README](src/modules/tax-taxjar/README.md) for sandbox setup.
+
 ## Project Structure
 
 All customization goes in `src/`:

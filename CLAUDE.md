@@ -142,6 +142,30 @@ Provider activation env vars (see `.env.template` for the full list):
 
 **Prod activation**: set `SHIPPO_API_KEY=shippo_live_...` plus the production warehouse address on Railway. Connect live UPS/USPS/FedEx carrier accounts in the Shippo dashboard. Redeploy the backend, then redeploy the frontend so the prebuild sync picks up the new calculated options.
 
+### Tax
+
+`medusa-config.ts` conditionally registers the Tax Module with a TaxJar provider when `TAXJAR_API_KEY` is set. Otherwise Medusa's default `tp_system` manual provider loads with zero rates and the cart shows `$0.00` tax. See the module's [README](src/modules/tax-taxjar/README.md) for the full API surface, response-parsing details, and sandbox caveats.
+
+**Nexus model** (phase 1): **WA only**. Only WA ship-to addresses get tax charged. Nexus state configuration lives in the TaxJar dashboard (separate for sandbox and live); add WA there + enter your WA sales-tax permit number. Other states are *monitored* via TaxJar's Economic Nexus Insights dashboard — register and start collecting in each state after TaxJar alerts you that you've crossed its threshold.
+
+**Checkout-time flow**: Medusa calls `getTaxLines` once per cart refresh after the ship-to address is known. The provider forwards the cart to TaxJar's `/taxes` endpoint and emits per-item + per-shipping-line rates. If `has_nexus: false` or the service fails, the provider returns zero tax lines and checkout continues — never blocks.
+
+**Post-order sync**: `src/subscribers/taxjar-order-sync.ts` pushes every `order.placed` to TaxJar's `/transactions/orders` (feeds the nexus dashboard + AutoFile) and deletes transactions on `order.canceled`. Failures are logged only — never roll back the order.
+
+**From-address**: `TAXJAR_FROM_*` envs default to the matching `SHIPPO_FROM_*` values when unset, so a single warehouse-address config serves both shipping and tax.
+
+Provider activation env vars (see `.env.template` for the full list):
+
+| Variable | Purpose |
+|----------|---------|
+| `TAXJAR_API_KEY` | Sandbox or live TaxJar token — presence toggles the module on |
+| `TAXJAR_SANDBOX` | `true` (default) uses `api.sandbox.taxjar.com`; `false` uses `api.taxjar.com` |
+| `TAXJAR_FROM_*` | Warehouse origin; falls back to `SHIPPO_FROM_*` when unset |
+
+**Dev activation**: sign up at [app.taxjar.com](https://app.taxjar.com/signup), add **Washington** as a nexus state, copy the sandbox token, set `TAXJAR_API_KEY=<sandbox>` + `TAXJAR_SANDBOX=true` in `.env`, restart Medusa, and reseed. The seed switches the US tax region's provider to `tp_taxjar_taxjar` automatically when the env is set. **Caveat**: sandbox nexus regions are separate from live — re-add WA in the live dashboard when you flip to production.
+
+**Prod activation**: sign up on a paid TaxJar plan, add WA as a live nexus state with the real permit number, set `TAXJAR_API_KEY=<live>` + `TAXJAR_SANDBOX=false` on Railway, redeploy. Optionally enable AutoFile for WA in the TaxJar dashboard — requires an ACH authorization and costs ~$35-50 per filing (WA will likely be quarterly or annual at launch volume).
+
 ### Build Output
 
 TypeScript compiles to `.medusa/server/` (git-ignored). The admin dashboard compiles to `.medusa/admin/`. Do not edit files in `.medusa/`.
@@ -247,7 +271,27 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/
 
 Or do it in the Admin UI: Settings → Regions → United States → add `pp_fluidpay_fluidpay`.
 
-### 5. Register the Shippo webhook
+### 5. Register TaxJar
+
+Live sales-tax calculation + economic-nexus monitoring. Do this before announcing to customers so the first real order collects the right tax.
+
+1. Sign up at [app.taxjar.com](https://app.taxjar.com/signup). Paid plan required for live (Starter ~$19/mo + optional AutoFile per state); sandbox is free.
+2. Dashboard → **State Settings** → add **Washington** as a nexus state. Enter your WA sales-tax permit number.
+3. Account → **API → Tokens** → copy the **Live Token** (not the sandbox one).
+4. In Railway on the backend service, set:
+   - `TAXJAR_API_KEY=<live-token>`
+   - `TAXJAR_SANDBOX=false`
+   - `TAXJAR_FROM_ZIP`, `TAXJAR_FROM_STATE`, `TAXJAR_FROM_CITY`, `TAXJAR_FROM_STREET1` (optional — falls back to `SHIPPO_FROM_*`)
+5. Redeploy. Startup logs should load the `tp_taxjar_taxjar` provider. If the backend was seeded before these envs were set, the US tax region still points at `tp_system` — fix with a one-off `medusa exec` script that updates `tax_region.provider_id`, or reseed (if no live orders exist yet).
+6. Place a $1 smoke-test order shipping to a WA address. Verify `tax_total` on the confirmation matches TaxJar's own calculator for that ZIP (~10.1% depending on city). The order appears in TaxJar dashboard → Transactions within ~60s.
+7. **Optional — AutoFile**: Dashboard → WA → Enable AutoFile. Requires ACH authorization (TaxJar debits sales tax from your account and pays the state on the filing schedule — monthly/quarterly/annual depending on WA's assessment of your volume).
+
+What happens if TaxJar is down or misconfigured:
+- Missing key → `tp_system` loads, every cart shows `$0.00` tax. No blocking, but you'd be undercollecting.
+- API failure → provider catches the error, returns empty tax lines, logs. Same outcome: $0 tax on that cart only.
+- Monitor TaxJar sandbox/live status at [status.taxjar.com](https://status.taxjar.com/).
+
+### 6. Register the Shippo webhook
 
 The backend is deployed and has a public Railway URL. Now subscribe Shippo to send tracking updates to it.
 
@@ -267,11 +311,11 @@ What happens if the webhook secret is missing or wrong:
 
 Dev note: Shippo can't POST to `localhost`, so the webhook flow isn't exercised in local dev unless you expose the backend via ngrok / cloudflared. Not necessary for rate-calc or label-purchase testing.
 
-### 6. Wire up the frontend
+### 7. Wire up the frontend
 
 See [`ta-strike-arena-website/CLAUDE.md`](../ta-strike-arena-website/CLAUDE.md#production-setup-first-time). The storefront needs the new publishable API key, its own FluidPay public key, and a rebuild/redeploy so the prebuild sync picks up prod pricing + images + variant IDs. No Shippo env var is needed on the storefront side — the backend decides which shipping options exist.
 
-### 7. Smoke test
+### 8. Smoke test
 
 Before announcing launch: place one real low-value order end-to-end against prod. Confirm the order appears in Admin → Orders with an authorized payment, the R2-hosted images load, the confirmation page shows an order ID, and the selected live carrier rate was applied (sanity-check against the rate returned by a direct Shippo dashboard quote for the same shipment). If capturing manually (`FLUIDPAY_CAPTURE_MODE=authorize`), also exercise the capture flow from the admin UI once.
 

@@ -752,15 +752,20 @@ export default async function seedDemoData({ container }: ExecArgs) {
   logger.info("Finished seeding regions.");
 
   logger.info("Seeding tax regions...");
+  const taxProviderId = process.env.TAXJAR_API_KEY
+    ? "tp_taxjar_taxjar"
+    : "tp_system";
   await createTaxRegionsWorkflow(container).run({
     input: [
       {
         country_code: "us",
-        provider_id: "tp_system",
+        provider_id: taxProviderId,
       },
     ],
   });
-  logger.info("Finished seeding tax regions.");
+  logger.info(
+    `Finished seeding tax regions (provider: ${taxProviderId}).`,
+  );
 
   // ── Stock location ───────────────────────────────────────
 
