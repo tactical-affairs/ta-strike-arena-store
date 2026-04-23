@@ -66,11 +66,8 @@ provider dashboards risks state drift between Medusa and the provider.
 | Shippo | `https://apps.goshippo.com` | Shippo account; toggle **Live** / **Test** in the top bar |
 | TaxJar | `https://app.taxjar.com` | TaxJar account; sandbox and live keys are separate |
 
-Store secrets live in 1Password (vault: "Strike Arena — Ops"). New
-employees get their own Medusa admin user created via `npx medusa
-user ...` — never share logins. FluidPay, Shippo, and TaxJar should
-each have individual accounts under the merchant umbrella (check each
-dashboard's "Team" settings).
+Your credentials for each of these systems will be set up by the
+admin. If you don't have access to one of them, ask.
 
 ---
 
