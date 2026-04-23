@@ -125,24 +125,19 @@ Medusa Admin → **Products → Create product**.
      (e.g., "Home training kits"), and sales channel (Default Sales
      Channel covers the main storefront).
 5. **Save as draft** first, review on `/shop/<handle>/` on the staging
-   storefront (run `npm run sync-images` on the website repo if the
-   new product isn't showing), then publish.
+   storefront, then publish.
 
-After publishing, run on the website repo:
+After publishing, deploy the storefront:
 
 ```bash
 cd ta-strike-arena-website
-npm run sync-images   # regenerate image + variant + price caches
-```
-
-Commit the resulting changes to `src/data/*.generated.ts` and deploy:
-
-```bash
 npm run deploy:gh
 ```
 
-The site rebuild is usually a few minutes; the new product page goes
-live after the GitHub Pages deploy finishes.
+The deploy script pulls the latest product data from the backend
+automatically (image URLs, variant IDs, prices) and bakes them into
+the static site. The new product page goes live after the GitHub
+Pages deploy finishes — usually a few minutes.
 
 ### Updating inventory counts
 
@@ -163,17 +158,22 @@ adjust for outgoing orders manually.
 ### Editing prices / descriptions / images
 
 - **Price** — Products → [product] → Variants → [variant] → Pricing →
-  edit the USD row. Saves immediately. Picked up by the next
-  `npm run deploy:gh` on the website (no backend restart needed).
-- **Description** — Products → [product] → General → edit. Save. Same
-  deploy cadence.
+  edit the USD row. Saves immediately.
+- **Description** — Products → [product] → General → edit. Save.
 - **Images** — Products → [product] → Media tab → drag new images in
   / delete old ones. Reorder by dragging. The first image is the
-  thumbnail. Save. Run `npm run sync-images` on the website and deploy.
+  thumbnail. Save.
 
-**Rule**: every catalog edit should be followed by `npm run deploy:gh`
-on the website repo within the same day. Otherwise the marketing site
-and admin-UI drift until the next unrelated deploy.
+Any of these changes require a storefront redeploy to go live:
+
+```bash
+cd ta-strike-arena-website
+npm run deploy:gh
+```
+
+**Rule**: every catalog edit should be followed by a deploy within
+the same day. Otherwise the marketing site and admin-UI drift until
+the next unrelated deploy.
 
 ### Deprecating / temporarily disabling a product
 
