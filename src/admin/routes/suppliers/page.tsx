@@ -9,6 +9,7 @@ import {
   Table,
   Text,
   Drawer,
+  Textarea,
 } from "@medusajs/ui";
 import { useEffect, useState } from "react";
 
@@ -19,13 +20,19 @@ type Supplier = {
   email: string | null;
   phone: string | null;
   lead_time_days: number | null;
+  notes: string | null;
   created_at: string;
 };
+
+type DrawerState =
+  | { mode: "closed" }
+  | { mode: "create" }
+  | { mode: "edit"; supplier: Supplier };
 
 const SuppliersPage = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawer, setDrawer] = useState<DrawerState>({ mode: "closed" });
 
   const load = async () => {
     setLoading(true);
@@ -50,10 +57,12 @@ const SuppliersPage = () => {
         <div>
           <Heading level="h2">Suppliers</Heading>
           <Text size="small" className="text-ui-fg-subtle">
-            Vendors we buy inventory from.
+            Vendors we buy inventory from. Click a row to edit.
           </Text>
         </div>
-        <Button onClick={() => setDrawerOpen(true)}>Add supplier</Button>
+        <Button onClick={() => setDrawer({ mode: "create" })}>
+          Add supplier
+        </Button>
       </div>
 
       <Table>
@@ -81,7 +90,11 @@ const SuppliersPage = () => {
             </Table.Row>
           ) : (
             suppliers.map((s) => (
-              <Table.Row key={s.id}>
+              <Table.Row
+                key={s.id}
+                className="cursor-pointer hover:bg-ui-bg-base-hover"
+                onClick={() => setDrawer({ mode: "edit", supplier: s })}
+              >
                 <Table.Cell className="font-medium">{s.name}</Table.Cell>
                 <Table.Cell>{s.contact_name ?? "—"}</Table.Cell>
                 <Table.Cell>{s.email ?? "—"}</Table.Cell>
@@ -95,11 +108,11 @@ const SuppliersPage = () => {
         </Table.Body>
       </Table>
 
-      <CreateSupplierDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        onCreated={() => {
-          setDrawerOpen(false);
+      <SupplierDrawer
+        state={drawer}
+        onClose={() => setDrawer({ mode: "closed" })}
+        onChanged={() => {
+          setDrawer({ mode: "closed" });
           load();
         }}
       />
@@ -107,25 +120,72 @@ const SuppliersPage = () => {
   );
 };
 
-function CreateSupplierDrawer({
-  open,
+type SupplierFormValues = {
+  name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  lead_time_days: string;
+  notes: string;
+};
+
+const EMPTY_FORM: SupplierFormValues = {
+  name: "",
+  contact_name: "",
+  email: "",
+  phone: "",
+  lead_time_days: "",
+  notes: "",
+};
+
+function valuesFor(supplier: Supplier): SupplierFormValues {
+  return {
+    name: supplier.name,
+    contact_name: supplier.contact_name ?? "",
+    email: supplier.email ?? "",
+    phone: supplier.phone ?? "",
+    lead_time_days: supplier.lead_time_days?.toString() ?? "",
+    notes: supplier.notes ?? "",
+  };
+}
+
+function SupplierDrawer({
+  state,
   onClose,
-  onCreated,
+  onChanged,
 }: {
-  open: boolean;
+  state: DrawerState;
   onClose: () => void;
-  onCreated: () => void;
+  onChanged: () => void;
 }) {
-  const [form, setForm] = useState({
-    name: "",
-    contact_name: "",
-    email: "",
-    phone: "",
-    lead_time_days: "",
-    notes: "",
-  });
+  const [form, setForm] = useState<SupplierFormValues>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const open = state.mode !== "closed";
+  const isEdit = state.mode === "edit";
+
+  // Sync form values whenever the drawer opens with a different target
+  useEffect(() => {
+    if (state.mode === "edit") {
+      setForm(valuesFor(state.supplier));
+    } else if (state.mode === "create") {
+      setForm(EMPTY_FORM);
+    }
+    setError(null);
+  }, [state]);
+
+  const buildBody = () => ({
+    name: form.name.trim(),
+    contact_name: form.contact_name.trim() || null,
+    email: form.email.trim() || null,
+    phone: form.phone.trim() || null,
+    lead_time_days: form.lead_time_days
+      ? parseInt(form.lead_time_days, 10)
+      : null,
+    notes: form.notes.trim() || null,
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,30 +193,22 @@ function CreateSupplierDrawer({
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/admin/procurement/suppliers", {
-        method: "POST",
+      const url =
+        state.mode === "edit"
+          ? `/admin/procurement/suppliers/${state.supplier.id}`
+          : "/admin/procurement/suppliers";
+      const method = state.mode === "edit" ? "PATCH" : "POST";
+      const res = await fetch(url, {
+        method,
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          lead_time_days: form.lead_time_days
-            ? parseInt(form.lead_time_days, 10)
-            : undefined,
-        }),
+        body: JSON.stringify(buildBody()),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message ?? `HTTP ${res.status}`);
       }
-      setForm({
-        name: "",
-        contact_name: "",
-        email: "",
-        phone: "",
-        lead_time_days: "",
-        notes: "",
-      });
-      onCreated();
+      onChanged();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -164,11 +216,38 @@ function CreateSupplierDrawer({
     }
   };
 
+  const handleDelete = async () => {
+    if (state.mode !== "edit") return;
+    if (!window.confirm(`Delete ${state.supplier.name}? Historical purchase orders will keep referencing it.`)) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/admin/procurement/suppliers/${state.supplier.id}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? `HTTP ${res.status}`);
+      }
+      onChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
-    <Drawer open={open} onOpenChange={onClose}>
+    <Drawer open={open} onOpenChange={(o) => !o && onClose()}>
       <Drawer.Content>
         <Drawer.Header>
-          <Drawer.Title>Add supplier</Drawer.Title>
+          <Drawer.Title>{isEdit ? "Edit supplier" : "Add supplier"}</Drawer.Title>
         </Drawer.Header>
         <form onSubmit={handleSubmit}>
           <Drawer.Body className="space-y-4">
@@ -219,14 +298,35 @@ function CreateSupplierDrawer({
                 }
               />
             </div>
+            <div>
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                rows={3}
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              />
+            </div>
             {error && <Text className="text-ui-fg-error">{error}</Text>}
           </Drawer.Body>
           <Drawer.Footer>
+            {isEdit && (
+              <Button
+                type="button"
+                variant="danger"
+                onClick={handleDelete}
+                disabled={saving || deleting}
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </Button>
+            )}
             <Drawer.Close asChild>
-              <Button variant="secondary">Cancel</Button>
+              <Button variant="secondary" type="button" disabled={saving || deleting}>
+                Cancel
+              </Button>
             </Drawer.Close>
-            <Button type="submit" disabled={saving || !form.name.trim()}>
-              {saving ? "Saving…" : "Save"}
+            <Button type="submit" disabled={saving || deleting || !form.name.trim()}>
+              {saving ? "Saving…" : isEdit ? "Save changes" : "Save"}
             </Button>
           </Drawer.Footer>
         </form>
