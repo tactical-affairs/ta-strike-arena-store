@@ -63,18 +63,33 @@ export default async function websiteRevalidate({
   const tags = new Set<string>(["products:list", "pricing"]);
   const paths = new Set<string>();
 
-  // Try to enrich with the specific handle for product events so the
-  // single-product page tag also gets cleared.
-  const productId = event.data?.id;
-  if (productId && event.name?.startsWith("product.")) {
+  // Try to enrich with the specific handle for product/variant events so
+  // the single-product page tag also gets cleared.
+  const triggerId = event.data?.id;
+  if (triggerId) {
     try {
       const query = container.resolve(ContainerRegistrationKeys.QUERY);
-      const { data } = await query.graph({
-        entity: "product",
-        fields: ["handle", "collection.handle"],
-        filters: { id: [productId] },
-      });
-      const p = data?.[0] as { handle?: string; collection?: { handle?: string } } | undefined;
+      let p: { handle?: string; collection?: { handle?: string } } | undefined;
+
+      if (event.name?.startsWith("product-variant.")) {
+        const { data } = await query.graph({
+          entity: "variant",
+          fields: ["id", "product.handle", "product.collection.handle"],
+        });
+        const v = (data as Array<{
+          id: string;
+          product?: { handle?: string; collection?: { handle?: string } };
+        }> | undefined ?? []).find((x) => x.id === triggerId);
+        p = v?.product;
+      } else if (event.name?.startsWith("product.")) {
+        const { data } = await query.graph({
+          entity: "product",
+          fields: ["handle", "collection.handle"],
+          filters: { id: [triggerId] },
+        });
+        p = (data as Array<{ handle?: string; collection?: { handle?: string } }> | undefined)?.[0];
+      }
+
       if (p?.handle) {
         tags.add(`product:${p.handle}`);
         paths.add(`/shop/${p.handle}`);
@@ -85,7 +100,7 @@ export default async function websiteRevalidate({
     } catch (err) {
       // Resolution failed (e.g. product was deleted) — broad invalidation
       // already covers it.
-      logger.warn(`[revalidate] could not resolve product ${productId}: ${(err as Error).message}`);
+      logger.warn(`[revalidate] could not resolve trigger ${triggerId}: ${(err as Error).message}`);
     }
   }
 
@@ -104,6 +119,9 @@ export const config: SubscriberConfig = {
     "product.created",
     "product.updated",
     "product.deleted",
+    "product-variant.created",
+    "product-variant.updated",
+    "product-variant.deleted",
     "product-collection.created",
     "product-collection.updated",
     "product-collection.deleted",
