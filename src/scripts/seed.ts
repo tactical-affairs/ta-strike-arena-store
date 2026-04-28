@@ -28,6 +28,7 @@ import {
   updateStoresWorkflow,
 } from "@medusajs/medusa/core-flows";
 import { ApiKey } from "../../.medusa/types/query-entry-points";
+import { bootstrapOpeningBalance } from "./lib/bootstrap-procurement";
 
 // ─── Image source directory ──────────────────────────────────
 // Product images are read from the marketing-site repo and uploaded
@@ -1115,58 +1116,15 @@ export default async function seedDemoData({ container }: ExecArgs) {
   logger.info("Finished seeding inventory levels data.");
 
   // ── Procurement: opening-balance PO + FIFO lots ───────────────
-  // Create one demo supplier and one "opening balance" purchase order
-  // per non-bundle SKU, then immediately receive it. This bootstraps
-  // the FIFO cost layers so COGS consumption has something to chew
-  // through on the first fulfilled order.
+  // Bootstrap one demo supplier + one auto-received "opening balance" PO so
+  // every non-bundle SKU has FIFO cost layers ready for COGS consumption.
+  //
+  // Logic lives in bootstrap-procurement.ts and is shared with
+  // src/scripts/reset-finalize.ts (the npm run reset flow). If you need to
+  // change procurement bootstrap behavior, do it in the helper so both stay
+  // in sync.
 
   logger.info("Seeding procurement: supplier + opening-balance PO.");
-
-  const procurement = container.resolve("procurement") as unknown as {
-    createSuppliers: (input: Record<string, unknown>) => Promise<{ id: string }>;
-    createPurchaseOrderWithLines: (input: {
-      supplier_id: string;
-      po_number?: string;
-      ordered_at?: Date;
-      notes?: string;
-      lines: Array<{
-        variant_id: string;
-        qty_ordered: number;
-        unit_cost: number;
-      }>;
-    }) => Promise<{ id: string }>;
-    receivePurchaseOrder: (input: {
-      purchase_order_id: string;
-      location_id: string;
-      received_at?: Date;
-      lines: Array<{
-        po_line_id: string;
-        inventory_item_id: string;
-        qty_received: number;
-      }>;
-    }) => Promise<{ lots_created: string[]; po_status: string }>;
-    retrievePurchaseOrder: (
-      id: string,
-      cfg: { relations: string[] },
-    ) => Promise<{
-      id: string;
-      lines: Array<{
-        id: string;
-        variant_id: string;
-        qty_ordered: number;
-      }>;
-    }>;
-  };
-
-  const supplier = await procurement.createSuppliers({
-    name: "Laser Ammo, Inc.",
-    contact_name: "Supplier Rep",
-    email: "orders@laserammo.example",
-    phone: "+1-555-555-0100",
-    default_currency: "usd",
-    lead_time_days: 14,
-    notes: "Demo seed supplier. Replace with real supplier on first real PO.",
-  });
 
   const variantBySku = new Map<string, string>();
   {
@@ -1179,58 +1137,34 @@ export default async function seedDemoData({ container }: ExecArgs) {
     }
   }
 
-  const openingPOLines = nonBundles
+  const procurementLines = nonBundles
     .map((p) => {
       const variantId = variantBySku.get(p.sku);
-      if (!variantId) return null;
+      const inventoryItemId = inventoryItemBySku.get(p.sku);
+      if (!variantId || !inventoryItemId) return null;
       const qty = p.stockQuantity ?? 0;
-      if (qty <= 0) return null;
       const unitCost = p.unitCost ?? Math.round(p.price * 0.6 * 100) / 100;
       return {
         variant_id: variantId,
-        qty_ordered: qty,
+        inventory_item_id: inventoryItemId,
+        qty,
         unit_cost: unitCost,
       };
     })
     .filter((l): l is NonNullable<typeof l> => l !== null);
 
-  if (openingPOLines.length > 0) {
-    const { id: poId } = await procurement.createPurchaseOrderWithLines({
-      supplier_id: supplier.id,
-      po_number: "PO-OPENING-BALANCE",
-      ordered_at: new Date(),
-      notes: "Opening balance. Replace with real historical PO data in prod.",
-      lines: openingPOLines,
-    });
-
-    const poDetail = await procurement.retrievePurchaseOrder(poId, {
-      relations: ["lines"],
-    });
-
-    const receiveLines = poDetail.lines
-      .map((line) => {
-        const inventoryItemId = inventoryItemBySku.get(
-          nonBundles.find((p) => variantBySku.get(p.sku) === line.variant_id)
-            ?.sku ?? "",
-        );
-        if (!inventoryItemId) return null;
-        return {
-          po_line_id: line.id,
-          inventory_item_id: inventoryItemId,
-          qty_received: line.qty_ordered,
-        };
-      })
-      .filter((l): l is NonNullable<typeof l> => l !== null);
-
-    await procurement.receivePurchaseOrder({
-      purchase_order_id: poId,
-      location_id: stockLocation.id,
-      received_at: new Date(),
-      lines: receiveLines,
-    });
-
-    logger.info(
-      `Seeded opening-balance PO ${poId} with ${receiveLines.length} received lots.`,
-    );
-  }
+  await bootstrapOpeningBalance({
+    container,
+    logger,
+    stockLocationId: stockLocation.id,
+    supplier: {
+      name: "Laser Ammo, Inc.",
+      contact_name: "Supplier Rep",
+      email: "orders@laserammo.example",
+      phone: "+1-555-555-0100",
+      lead_time_days: 14,
+      notes: "Demo seed supplier. Replace with real supplier on first real PO.",
+    },
+    lines: procurementLines,
+  });
 }

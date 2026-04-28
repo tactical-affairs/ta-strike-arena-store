@@ -358,8 +358,96 @@ docker exec ta-strike-arena-postgres psql -U medusa -d postgres \
 rm -rf static
 npx medusa db:setup --db ta_strike_arena
 npm run seed
-npx medusa user -e admin@example.com -p <password>
+npx medusa user -e admin@tacticalaffairs.com -p testing
 ```
+
+This `seed.ts` flow is the bootstrap path for a brand-new environment. For everyday dev resets where you want dev to mirror current production catalog content, prefer the prod-as-truth flow below.
+
+## Resetting dev from prod
+
+Production is the source of truth for catalog content (products, variants, prices, descriptions, R2-hosted images, metadata). Dev resets via two npm scripts that snapshot prod into a local cache and then rebuild dev from that cache, scrubbing transactional/PII data and re-injecting dev-specific auth + procurement state. The desired property: dev = a faithful copy of what customers see, minus business operational data, in 1–3 minutes warm or ~10 seconds from a cached snapshot.
+
+### When to use which command
+
+| Scenario | Command |
+|---|---|
+| Brand-new env, no prod yet | `npm run seed` |
+| Refresh dev from current prod (network call, slow) | `npm run pull:prod` |
+| Rebuild dev DB from the latest cached snapshot (offline, fast) | `npm run reset` |
+| Reset to the same baseline multiple times during a test cycle | `npm run reset` (no need to re-pull) |
+
+`npm run pull:prod` and `npm run reset` are decoupled on purpose. Pull hits the network; reset is local. Pull once, reset as many times as you need.
+
+### Setup (one-time)
+
+1. Create a **read-only** R2 API token in Cloudflare scoped to Object Read on the prod bucket (`ta-strike-arena-images`). Or reuse the existing prod R2 token from `railway variables --service medusa` — `pull-prod.ts` only invokes read APIs, but a strictly-read-only token is safer.
+2. Authenticate to Railway: `railway login` (or set `RAILWAY_TOKEN` in `.env`). The CLI must be linked to this project (`railway link`).
+3. Make sure your local Postgres Docker container is running (`docker ps` should show `ta-strike-arena-postgres`). `pull-prod.ts` connects through this container to probe prod's server version, then spawns an ephemeral `postgres:<major>` container with a matching `pg_dump` (pg_dump refuses to dump from a server newer than itself). You don't need libpq installed on your Mac.
+4. Add to your `.env`:
+   ```
+   PROD_R2_ACCESS_KEY_ID=<token-id>
+   PROD_R2_SECRET_ACCESS_KEY=<token-secret>
+   PROD_R2_BUCKET=ta-strike-arena-images
+   PROD_R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+   PROD_R2_PUBLIC_BASE=https://pub-<hash>.r2.dev
+   DEV_PUBLISHABLE_KEY=<pk_… matching the storefront's NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY>
+   DEV_ADMIN_EMAIL=admin@tacticalaffairs.com
+   DEV_ADMIN_PASSWORD=testing
+   DEV_DEFAULT_STOCK=100
+   POSTGRES_CONTAINER=ta-strike-arena-postgres   # local Docker container name
+   POSTGRES_USER=medusa                          # local Docker user
+   ```
+   Override `RAILWAY_POSTGRES_SERVICE` if your Railway Postgres service has a non-default name (defaults to `Postgres`). The `pull-prod.ts` script reads `DATABASE_PUBLIC_URL` from that service to get a proxy hostname `pg_dump` can reach.
+
+### Flow
+
+`npm run pull:prod` writes to `.cache/`:
+- `catalog.dump` — `pg_dump --format=custom` of prod, with data for transactional tables EXCLUDED via `--exclude-table-data` patterns from `src/scripts/lib/transactional-tables.ts`. Schema for those tables IS included. The dump:
+   1. Pulls prod's `DATABASE_PUBLIC_URL` via `railway variables --service Postgres --kv` (Postgres service exposes the proxy hostname; the medusa service only has the internal one).
+   2. Probes the server's major version via `psql … "SHOW server_version"` (uses the local Postgres container as the psql host).
+   3. Spawns an ephemeral `postgres:<major>` Docker container with a matching `pg_dump` and streams its stdout to `.cache/catalog.dump`. This auto-tracks prod's Postgres version so the host never needs `libpq` installed.
+   4. SSL is forced to `require` mode (encrypts but doesn't verify Railway's self-signed proxy cert).
+- `images/` — flat-named mirror of prod's R2 bucket. ETag-diffed against the previous manifest, so re-pulls only download changed images.
+- `manifest.json` — `pulledAt`, `prodMigrationCount`, `r2PublicBase`, image manifest.
+
+`npm run reset` rebuilds dev from `.cache/`:
+1. Drops + recreates the dev DB.
+2. `pg_restore`s the dump.
+3. Runs `medusa db:migrate` to bring schema up to local code's HEAD (handles the case where local code has migrations newer than prod).
+4. `TRUNCATE`s every transactional table pattern (defense in depth — catches data that snuck through if a pattern is missing from `transactional-tables.ts`).
+5. Resets every `inventory_level.stocked_quantity` to `DEV_DEFAULT_STOCK`.
+6. Mirrors `.cache/images/` into `./static/` and rewrites image URLs in the DB from prod's R2 prefix to `http://localhost:9000/static/`.
+7. Creates the dev admin user via `npx medusa user`.
+8. Spawns `medusa exec ./src/scripts/reset-finalize.ts` to inject the stable dev publishable key (overrides the random token from `createApiKeysWorkflow`) and re-bootstrap procurement (one demo supplier + one auto-received opening-balance PO at `0.6 × price` per non-bundle SKU, via the shared `bootstrapOpeningBalance` helper).
+
+### What gets restored vs. wiped
+
+The split lives in `src/scripts/lib/transactional-tables.ts` — single source of truth for both `pull:prod` and `reset`.
+
+**Restored** (catalog + config + setup): products, variants, options, prices, images, collections, categories, tags, types, sales channels, store, regions, countries, currencies, tax regions/rates, shipping profiles/options/zones, fulfillment sets, stock locations, inventory items themselves, module link tables.
+
+**Wiped** (transactional / sensitive): orders, draft orders, returns, swaps, claims, carts, payment sessions, payment collections, fulfillments, shipments, payments, customers, customer addresses, customer groups, users, auth identities, api keys, suppliers, purchase orders, inventory lots, COGS entries, notifications, workflow executions, events.
+
+### Maintenance contract — don't break this
+
+When you change anything that touches the data model or the reset flow, audit this table:
+
+| Change | What to update |
+|---|---|
+| Add a new custom module with transactional/operational tables (orders-like, audit-log-like, customer-like) | Add patterns to `src/scripts/lib/transactional-tables.ts`. **Skipping this leaks PII into dev dumps AND keeps stale operational data after every reset.** |
+| Add a new custom module with catalog-like or config-like tables | Nothing — the schema-and-data dump handles it transparently. |
+| Add fields to procurement bootstrap (e.g. new supplier metadata) | Edit `src/scripts/lib/bootstrap-procurement.ts` so seed.ts and reset both pick up the change. |
+| Change `seed.ts` procurement bootstrap logic | Move it into `bootstrap-procurement.ts`. Don't fork the logic. |
+| Add a new admin role or permission scheme | Update step 7/8 of `reset-from-cache.ts` (admin user creation) and possibly `reset-finalize.ts`. |
+| Add per-region / per-channel publishable keys, or change api_key shape | Update the publishable key injection in `reset-finalize.ts`. |
+| Rename or restructure R2 image storage (subdirs, new bucket, naming convention) | Update the image sync in `pull-prod.ts` and the URL rewrite step in `reset-from-cache.ts`. |
+| Medusa upgrade adds new transactional/sensitive tables | Audit `transactional-tables.ts`. Defense-in-depth `TRUNCATE` partially covers this, but only for patterns already listed. |
+| Medusa upgrade renames the migration tracking table (currently `mikro_orm_migrations`) | Update the migration count capture in `pull-prod.ts`. |
+| Change R2 file-naming flattening (`/` → `__`) | Update both `pull-prod.ts` (download-side flatten) and `seed.ts` (upload-side flatten) so they stay consistent. |
+| Rename / split the Railway Postgres service | Update `RAILWAY_POSTGRES_SERVICE` in `.env`, or pass it explicitly. `pull-prod.ts` reads `DATABASE_PUBLIC_URL` from this service. |
+| Rename / replace the local Postgres Docker container | Update `POSTGRES_CONTAINER` in `.env`. `pull-prod.ts` (uses it for the version probe) and `reset-from-cache.ts` (drops/recreates the dev DB through it) target this container by name. |
+| Prod Postgres major version upgrades (e.g. 18 → 19) | None — `pull-prod.ts` auto-detects via `SHOW server_version` and pulls the matching `postgres:<major>` image. First run after an upgrade does an extra Docker pull; subsequent runs are cached. |
+| Railway switches off `DATABASE_PUBLIC_URL` (e.g. moves to private-only networking) | `pull-prod.ts` would need a different transport — likely `railway run --service Postgres -- pg_dump` proxied through Railway's edge, or a temporary IP allowlist. Currently this script assumes a public proxy URL exists. |
 
 ## Claude Code Setup
 

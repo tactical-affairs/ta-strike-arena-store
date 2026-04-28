@@ -92,6 +92,79 @@ The storefront connects to this backend using the Medusa JS SDK with a publishab
    - **API**: http://localhost:9000
    - **Admin dashboard**: http://localhost:9000/app (or http://localhost:5173 in dev)
 
+## Resetting dev from prod
+
+Production is the source of truth for catalog content (products, prices, descriptions, R2 images, metadata). For everyday dev resets, prefer cloning prod into local rather than re-running `npm run seed` — the seed script has placeholder dimensions, demo cost basis, and no admin-uploaded images.
+
+The flow is two decoupled commands:
+
+| Command | What it does |
+|---|---|
+| `npm run pull:prod` | Snapshots prod's catalog DB and mirrors prod's R2 images into `.cache/`. Hits the network. ~1–3 min cold, ~10 sec warm (only changed images re-downloaded). |
+| `npm run reset` | Drops + rebuilds the local dev DB from `.cache/`. Offline. ~10 sec. Wipes orders / customers / suppliers / payment data, resets inventory levels, re-injects a stable dev admin + publishable key, re-bootstraps procurement. |
+
+Pull once, reset as many times as you want. Stop your dev server (`npm run dev`) before running reset.
+
+### One-time setup
+
+1. **Authenticate to Railway** so `pull-prod.ts` can fetch prod's public DB URL:
+
+   ```bash
+   railway login
+   railway link   # pick the Strike Arena project
+   ```
+
+2. **Make sure your local Postgres Docker container is running** (`docker ps` should show `ta-strike-arena-postgres`). The pull script uses it as a psql host to probe prod's server version, then spawns a matching `postgres:<major>` container for `pg_dump` — that way you don't need libpq installed on your Mac.
+
+3. **Add the dev-reset env vars to `.env`** (see `.env.template` for the full block with comments):
+
+   ```
+   PROD_R2_ACCESS_KEY_ID=<r2-token-id>
+   PROD_R2_SECRET_ACCESS_KEY=<r2-token-secret>
+   PROD_R2_BUCKET=ta-strike-arena-images
+   PROD_R2_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+   PROD_R2_PUBLIC_BASE=https://pub-<hash>.r2.dev
+   DEV_PUBLISHABLE_KEY=<pk_… matching the storefront's NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY>
+   DEV_ADMIN_EMAIL=admin@tacticalaffairs.com
+   DEV_ADMIN_PASSWORD=testing
+   DEV_DEFAULT_STOCK=100
+   POSTGRES_CONTAINER=ta-strike-arena-postgres
+   POSTGRES_USER=medusa
+   RAILWAY_POSTGRES_SERVICE=Postgres
+   ```
+
+   Easiest way to find the R2 values: `railway variables --service medusa --kv | grep S3_`. The prod backend already has them set.
+
+   `DEV_PUBLISHABLE_KEY` must match what's in `ta-strike-arena-website/.env.local` as `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY`. Set them once and resets become silent.
+
+### Daily flow
+
+```bash
+# Optional: refresh the cache from prod
+npm run pull:prod
+
+# Rebuild dev DB from whatever's in .cache/
+npm run reset
+
+# Restart dev server to pick up the fresh DB
+npm run dev
+```
+
+### What's wiped vs. preserved
+
+The split is in `src/scripts/lib/transactional-tables.ts`. **Preserved**: products, variants, prices, images, collections, categories, regions, sales channels, shipping/tax/fulfillment setup, stock locations. **Wiped**: orders, carts, customers, payments, fulfillments, users, api keys, suppliers, purchase orders, COGS entries.
+
+After reset, dev has a stable admin login (`DEV_ADMIN_EMAIL` / `DEV_ADMIN_PASSWORD`), a stable publishable key (`DEV_PUBLISHABLE_KEY`), every non-bundle SKU at `DEV_DEFAULT_STOCK` units of stock, and a fresh demo supplier + auto-received opening-balance PO at `0.6 × price` per SKU.
+
+### Adding new modules — don't break this
+
+If you add a custom Medusa module that holds **transactional or operational data** (orders-like, customer-like, audit logs, etc.), you must add its tables to `src/scripts/lib/transactional-tables.ts`. Otherwise:
+
+- Production data leaks into dev dumps every `npm run pull:prod`.
+- Dev keeps stale operational data after every `npm run reset`.
+
+Catalog-like and config-like tables don't need any action — the schema-and-data dump handles them transparently. Full maintenance contract (Medusa upgrades, Postgres major-version bumps, R2 layout changes, Railway service renames) is in [`CLAUDE.md → Resetting dev from prod`](CLAUDE.md#resetting-dev-from-prod).
+
 ## Production
 
 Deployed to Railway. Full **first-time** promotion sequence (infrastructure, env vars, initial seed, admin user, FluidPay region attachment, smoke test) is in [`CLAUDE.md → Production Setup`](CLAUDE.md#production-setup) — that doc stays authoritative so this README doesn't duplicate moving details.
@@ -117,7 +190,9 @@ Quick checklist:
 | `npm run dev` | Dev server with hot reload |
 | `npm run build` | Compile TypeScript to `.medusa/server/` |
 | `npm run start` | Production server |
-| `npm run seed` | Seed demo data (products, regions, shipping, fulfillment) |
+| `npm run seed` | Seed demo data (products, regions, shipping, fulfillment). Use only for brand-new envs — for everyday dev resets, prefer `pull:prod` + `reset`. |
+| `npm run pull:prod` | Snapshot prod's catalog DB + R2 images into `.cache/`. See [Resetting dev from prod](#resetting-dev-from-prod). |
+| `npm run reset` | Rebuild dev DB from `.cache/` (drops + restores + scrubs + re-bootstraps). |
 | `npm run test:unit` | Unit tests (`src/**/__tests__/**/*.unit.spec.ts`) |
 | `npm run test:integration:http` | HTTP integration tests (`integration-tests/http/`) |
 | `npm run test:integration:modules` | Module integration tests |
