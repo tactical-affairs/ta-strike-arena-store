@@ -25,6 +25,14 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
 const WEBSITE_URL = process.env.WEBSITE_REVALIDATE_URL;
 const SECRET = process.env.REVALIDATE_SECRET;
 
+// Retry transient 5xx / network failures with exponential backoff. A single
+// 503 (Railway service restart, Cloudflare hiccup) used to leave the cache
+// poisoned forever — the next product edit was the only natural recovery.
+const MAX_ATTEMPTS = 3;
+const BACKOFF_MS = [1000, 3000, 9000];
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function postRevalidate(
   logger: { info: (m: string) => void; warn: (m: string) => void; error: (m: string) => void },
   body: { tags?: string[]; paths?: string[] },
@@ -33,22 +41,60 @@ async function postRevalidate(
     logger.info(`[revalidate] skipping — WEBSITE_REVALIDATE_URL or REVALIDATE_SECRET not set`);
     return;
   }
-  try {
-    const res = await fetch(WEBSITE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-revalidate-secret": SECRET,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      logger.warn(`[revalidate] ${WEBSITE_URL} → ${res.status} ${await res.text()}`);
-    } else {
-      logger.info(`[revalidate] sent tags=${body.tags?.join(",") ?? ""} paths=${body.paths?.join(",") ?? ""}`);
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(WEBSITE_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-revalidate-secret": SECRET,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) {
+        logger.info(
+          `[revalidate] sent tags=${body.tags?.join(",") ?? ""} paths=${body.paths?.join(",") ?? ""}${attempt > 1 ? ` (attempt ${attempt})` : ""}`,
+        );
+        return;
+      }
+
+      // 4xx is permanent (auth, malformed request) — no point retrying.
+      if (res.status < 500) {
+        logger.warn(
+          `[revalidate] ${WEBSITE_URL} → ${res.status} ${await res.text()} — not retrying (4xx)`,
+        );
+        return;
+      }
+
+      // 5xx — keep trying until budget runs out.
+      const body503 = await res.text();
+      if (attempt < MAX_ATTEMPTS) {
+        logger.warn(
+          `[revalidate] ${WEBSITE_URL} → ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS}) — retrying in ${BACKOFF_MS[attempt - 1]}ms`,
+        );
+        await sleep(BACKOFF_MS[attempt - 1]);
+        continue;
+      }
+      logger.error(
+        `[revalidate] ${WEBSITE_URL} → ${res.status} ${body503} — exhausted ${MAX_ATTEMPTS} attempts`,
+      );
+      return;
+    } catch (err) {
+      // Network error — also retry up to budget.
+      if (attempt < MAX_ATTEMPTS) {
+        logger.warn(
+          `[revalidate] post threw: ${(err as Error).message} (attempt ${attempt}/${MAX_ATTEMPTS}) — retrying in ${BACKOFF_MS[attempt - 1]}ms`,
+        );
+        await sleep(BACKOFF_MS[attempt - 1]);
+        continue;
+      }
+      logger.error(
+        `[revalidate] post failed: ${(err as Error).message} — exhausted ${MAX_ATTEMPTS} attempts`,
+      );
+      return;
     }
-  } catch (err) {
-    logger.error(`[revalidate] post failed: ${(err as Error).message}`);
   }
 }
 
