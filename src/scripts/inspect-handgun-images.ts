@@ -23,8 +23,9 @@ export default async function inspectHandgunImages({ container }: ExecArgs) {
     }
     const images = (product.images ?? []) as Array<{ url: string }>;
     console.log(`# ${handle} (${images.length} images)`);
+    console.log(`  thumbnail: ${product.thumbnail ?? "(none)"}`);
     for (const img of images) {
-      console.log(`  ${img.url}`);
+      console.log(`  image:     ${img.url}`);
     }
   }
 }

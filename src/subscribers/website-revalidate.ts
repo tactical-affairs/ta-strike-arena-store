@@ -142,6 +142,12 @@ export default async function websiteRevalidate({
       }
       if (p?.collection?.handle) {
         tags.add(`collection:${p.collection.handle}`);
+        // Tag-based revalidation only purges the Data Cache. Statically
+        // prerendered routes (collection landing pages are listed in
+        // generateStaticParams) keep their HTML in Next's Full Route Cache
+        // until revalidatePath fires for them. Without this line, edits
+        // to a product silently fail to refresh /shop/collections/<h>.
+        paths.add(`/shop/collections/${p.collection.handle}`);
       }
     } catch (err) {
       // Resolution failed (e.g. product was deleted) — broad invalidation
