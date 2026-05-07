@@ -13,13 +13,13 @@
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN --mount=type=cache,id=npm,target=/root/.npm npm ci
 
 FROM deps AS build
 COPY . .
 # `npm run build` runs `medusa build && cd .medusa/server && npm install --omit=dev`,
 # producing a self-contained .medusa/server/ with its own prod-only node_modules.
-RUN --mount=type=cache,target=/root/.npm npm run build
+RUN --mount=type=cache,id=npm,target=/root/.npm npm run build
 
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app/.medusa/server
