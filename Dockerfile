@@ -22,11 +22,14 @@ COPY . .
 RUN --mount=type=cache,id=s/28fa736f-3089-4946-a96f-92fa898ddd23-npm,target=/root/.npm npm run build
 
 FROM node:22-bookworm-slim AS runtime
-WORKDIR /app/.medusa/server
+WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=build /app/.medusa/server /app/.medusa/server
+# Keep package.json at /app so `npm start` resolves the script exactly the
+# way Railpack invoked it: `cd .medusa/server && npx medusa db:migrate &&
+# npx medusa start`. Direct CMD invocations from /app/.medusa/server were
+# producing no output past the migration step under Railway's start-command
+# wrapping; deferring to the npm script removes that ambiguity.
+COPY --from=build /app/package.json /app/package.json
+COPY --from=build /app/.medusa /app/.medusa
 EXPOSE 9000
-# Apply pending migrations on every boot, then start the server.
-# This matches the previous `npm start` behavior and is required for the
-# multi-stage deploy flow (the worktree image doesn't run npm scripts).
-CMD ["sh", "-c", "npx medusa db:migrate && npx medusa start"]
+CMD ["npm", "start"]
