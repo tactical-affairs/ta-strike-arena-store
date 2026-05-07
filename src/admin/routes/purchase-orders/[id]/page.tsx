@@ -906,6 +906,9 @@ function ReceiveDrawer({
   const [inventoryItemIds, setInventoryItemIds] = useState<
     Record<string, string>
   >({});
+  const [variantLabels, setVariantLabels] = useState<Record<string, string>>(
+    {},
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -922,24 +925,33 @@ function ReceiveDrawer({
         setLocationId(locData.stock_locations[0].id);
       }
 
-      // Look up inventory_item_id for each variant on the PO
+      // Look up inventory_item_id + human-readable label for each variant.
       const variantIds = po.lines.map((l) => l.variant_id).filter(Boolean);
       if (variantIds.length > 0) {
         const params = new URLSearchParams({
           id: variantIds.join(","),
-          fields: "id,inventory_items.inventory.id",
+          fields:
+            "id,sku,title,product.title,inventory_items.inventory.id",
         });
         const varRes = await fetch(
           `/admin/products/variants?${params.toString()}`,
           { credentials: "include" },
         );
         const varData = await varRes.json();
-        const map: Record<string, string> = {};
+        const invMap: Record<string, string> = {};
+        const labelMap: Record<string, string> = {};
         for (const v of varData.variants ?? []) {
           const invItem = v.inventory_items?.[0]?.inventory?.id;
-          if (invItem) map[v.id] = invItem;
+          if (invItem) invMap[v.id] = invItem;
+          labelMap[v.id] = variantLabel({
+            id: v.id,
+            sku: v.sku ?? null,
+            title: v.title,
+            product: v.product ? { title: v.product.title } : null,
+          });
         }
-        setInventoryItemIds(map);
+        setInventoryItemIds(invMap);
+        setVariantLabels(labelMap);
       }
     })();
   }, [open, po.id]);
@@ -1035,10 +1047,13 @@ function ReceiveDrawer({
               <Table.Body>
                 {po.lines.map((l) => {
                   const outstanding = l.qty_ordered - l.qty_received;
+                  const label = variantLabels[l.variant_id] ?? l.variant_id;
                   return (
                     <Table.Row key={l.id}>
-                      <Table.Cell className="font-mono text-xs">
-                        {l.variant_id}
+                      <Table.Cell>
+                        <Text size="small" className="break-words">
+                          {label}
+                        </Text>
                       </Table.Cell>
                       <Table.Cell>{outstanding}</Table.Cell>
                       <Table.Cell>
