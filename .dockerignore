@@ -1,0 +1,41 @@
+# Build artifacts + dependency trees — re-installed/rebuilt inside the image
+node_modules
+.medusa
+dist
+build
+
+# Caches the host accumulates that the image shouldn't ship
+.cache
+coverage
+*.tsbuildinfo
+
+# Local uploads (dev only; prod uses S3/R2)
+static
+uploads
+
+# Secrets — env is supplied at runtime by Railway
+.env
+.env.*
+
+# VCS + tooling noise
+.git
+.gitignore
+.gitattributes
+.idea
+.vscode
+.DS_Store
+*.log
+yarn-error.log
+
+# Claude Code runtime
+.claude
+
+# Symlinks to sibling repos (used in dev for cross-project references)
+ta-strike-arena-website
+ta-player-app
+
+# Tests + scripts that don't need to ship in the runtime image. Source scripts
+# under src/scripts/ DO ship — `railway run --service medusa npx medusa exec`
+# needs them; integration test files don't.
+**/*.test.ts
+integration-tests
