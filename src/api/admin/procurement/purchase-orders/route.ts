@@ -44,10 +44,23 @@ export const POST = async (
     PROCUREMENT_MODULE,
   ) as ProcurementModuleService;
 
-  const { id } = await service.createPurchaseOrderWithLines({
-    ...body,
-    created_by: body.created_by,
-  });
+  let id: string;
+  try {
+    ({ id } = await service.createPurchaseOrderWithLines({
+      ...body,
+      created_by: body.created_by,
+    }));
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    const message = (err as { message?: string })?.message ?? "";
+    if (code === "23505" || /unique|duplicate/i.test(message)) {
+      res.status(409).json({
+        message: `PO number "${body.po_number}" is already in use`,
+      });
+      return;
+    }
+    throw err;
+  }
   const purchase_order = await service.retrievePurchaseOrder(id, {
     relations: ["lines", "supplier", "adjustments"],
   });

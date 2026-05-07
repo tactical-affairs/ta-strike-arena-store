@@ -3,7 +3,8 @@
  *
  * GET   /admin/procurement/purchase-orders/:id → { purchase_order, landed_costs }
  * PATCH /admin/procurement/purchase-orders/:id → { purchase_order, landed_costs }
- *   body: { supplier_id?, expected_at?, notes?, status? }
+ *   body: { po_number?, supplier_id?, expected_at?, notes?, status? }
+ *   - po_number: must be unique across all POs; collisions return 409.
  *   - status: only "canceled" is accepted; other transitions are managed by the
  *     receive flow. Cancellation is rejected if any line has qty_received > 0.
  */
@@ -25,6 +26,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 };
 
 type PatchBody = {
+  po_number?: string;
   supplier_id?: string;
   expected_at?: string | null;
   notes?: string | null;
@@ -69,6 +71,14 @@ export const PATCH = async (req: MedusaRequest, res: MedusaResponse) => {
   }
 
   const update: Record<string, unknown> = { id };
+  if (Object.prototype.hasOwnProperty.call(body, "po_number")) {
+    const trimmed = (body.po_number ?? "").trim();
+    if (!trimmed) {
+      res.status(400).json({ message: "po_number cannot be empty" });
+      return;
+    }
+    update.po_number = trimmed;
+  }
   if (Object.prototype.hasOwnProperty.call(body, "supplier_id")) {
     update.supplier_id = body.supplier_id || null;
   }
@@ -82,7 +92,20 @@ export const PATCH = async (req: MedusaRequest, res: MedusaResponse) => {
     update.status = "canceled";
   }
 
-  await service.updatePurchaseOrders(update);
+  try {
+    await service.updatePurchaseOrders(update);
+  } catch (err: unknown) {
+    // Postgres unique-violation surface as 23505 from the underlying driver.
+    const code = (err as { code?: string })?.code;
+    const message = (err as { message?: string })?.message ?? "";
+    if (code === "23505" || /unique|duplicate/i.test(message)) {
+      res.status(409).json({
+        message: `PO number "${update.po_number}" is already in use`,
+      });
+      return;
+    }
+    throw err;
+  }
 
   const purchase_order = await service.retrievePurchaseOrder(id, {
     relations: ["lines", "supplier", "adjustments"],

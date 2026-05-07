@@ -36,6 +36,7 @@ export function CreatePurchaseOrderDrawer({
 }) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
+  const [poNumber, setPoNumber] = useState<string>("");
   const [supplierId, setSupplierId] = useState<string>("");
   const [expectedAt, setExpectedAt] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
@@ -139,6 +140,7 @@ export function CreatePurchaseOrderDrawer({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          po_number: poNumber.trim() || undefined,
           supplier_id: supplierId,
           expected_at: expectedAt || undefined,
           notes: notes || undefined,
@@ -161,6 +163,7 @@ export function CreatePurchaseOrderDrawer({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message ?? `HTTP ${res.status}`);
       }
+      setPoNumber("");
       setSupplierId("");
       setExpectedAt("");
       setNotes("");
@@ -186,6 +189,14 @@ export function CreatePurchaseOrderDrawer({
         </Drawer.Header>
         <form onSubmit={handleSubmit}>
           <Drawer.Body className="space-y-4">
+            <div>
+              <Label>PO number</Label>
+              <Input
+                value={poNumber}
+                onChange={(e) => setPoNumber(e.target.value)}
+                placeholder="Auto-generated if blank (e.g. match your supplier's PO number)"
+              />
+            </div>
             <div>
               <Label>Supplier *</Label>
               <Select value={supplierId} onValueChange={setSupplierId}>

@@ -756,6 +756,7 @@ function EditDrawer({
   onSaved: () => void;
 }) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [poNumber, setPoNumber] = useState<string>("");
   const [supplierId, setSupplierId] = useState<string>("");
   const [expectedAt, setExpectedAt] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
@@ -764,6 +765,7 @@ function EditDrawer({
 
   useEffect(() => {
     if (!open) return;
+    setPoNumber(po.po_number);
     setSupplierId(po.supplier?.id ?? "");
     setExpectedAt(
       po.expected_at ? po.expected_at.slice(0, 10) : "",
@@ -785,6 +787,10 @@ function EditDrawer({
       setError("Supplier is required");
       return;
     }
+    if (!poNumber.trim()) {
+      setError("PO number is required");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -793,6 +799,7 @@ function EditDrawer({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          po_number: poNumber.trim(),
           supplier_id: supplierId,
           expected_at: expectedAt || null,
           notes: notes || null,
@@ -820,11 +827,20 @@ function EditDrawer({
         <form onSubmit={handleSubmit}>
           <Drawer.Body className="space-y-4">
             <Text size="small" className="text-ui-fg-subtle">
-              Editing supplier, expected delivery, or notes is always allowed
-              while the PO is open. Adjustments are managed below the line
-              items on the detail page. To change line items, cancel this PO
-              and create a new one (lots already received cannot be unwound).
+              Editing PO number, supplier, expected delivery, or notes is
+              always allowed while the PO is open. Adjustments are managed
+              below the line items on the detail page. To change line items,
+              cancel this PO and create a new one (lots already received
+              cannot be unwound).
             </Text>
+            <div>
+              <Label>PO number *</Label>
+              <Input
+                value={poNumber}
+                onChange={(e) => setPoNumber(e.target.value)}
+                placeholder="e.g. match your supplier's PO number"
+              />
+            </div>
             <div>
               <Label>Supplier *</Label>
               <Select value={supplierId} onValueChange={setSupplierId}>
@@ -860,7 +876,10 @@ function EditDrawer({
                 Cancel
               </Button>
             </Drawer.Close>
-            <Button type="submit" disabled={saving || !supplierId}>
+            <Button
+              type="submit"
+              disabled={saving || !supplierId || !poNumber.trim()}
+            >
               {saving ? "Saving…" : "Save changes"}
             </Button>
           </Drawer.Footer>
