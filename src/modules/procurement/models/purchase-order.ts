@@ -4,15 +4,15 @@ import { PurchaseOrderLine } from "./purchase-order-line";
 import { PoAdjustment } from "./po-adjustment";
 
 /**
- * A purchase order to a supplier. Goes through draft → submitted →
- * partial → closed. `canceled` is terminal.
+ * A purchase order to a supplier. Goes through open → partial → closed.
+ * `canceled` is terminal.
  */
 export const PurchaseOrder = model.define("purchase_order", {
   id: model.id({ prefix: "po" }).primaryKey(),
   po_number: model.text().searchable().unique(),
   status: model
-    .enum(["draft", "submitted", "partial", "closed", "canceled"])
-    .default("draft"),
+    .enum(["open", "partial", "closed", "canceled"])
+    .default("open"),
   ordered_at: model.dateTime().nullable(),
   expected_at: model.dateTime().nullable(),
   notes: model.text().nullable(),

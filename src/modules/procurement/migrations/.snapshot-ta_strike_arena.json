@@ -21324,21 +21324,7 @@
         }
       ],
       "checks": [],
-      "foreignKeys": {
-        "po_line_purchase_order_id_foreign": {
-          "columnNames": [
-            "purchase_order_id"
-          ],
-          "constraintName": "po_line_purchase_order_id_foreign",
-          "localTableName": "public.po_line",
-          "referencedTableName": "public.purchase_order",
-          "referencedColumnNames": [
-            "id"
-          ],
-          "updateRule": "cascade",
-          "deleteRule": "no action"
-        }
-      },
+      "foreignKeys": {},
       "nativeEnums": {
         "claim_reason_enum": {
           "name": "claim_reason_enum",
@@ -29307,11 +29293,10 @@
           "length": null,
           "precision": null,
           "scale": null,
-          "default": "'draft'",
+          "default": "'open'",
           "comment": null,
           "enumItems": [
-            "draft",
-            "submitted",
+            "open",
             "partial",
             "closed",
             "canceled"
@@ -37758,7 +37743,7 @@
           "length": null,
           "precision": null,
           "scale": null,
-          "default": "'01KPXMKSN5JYMQBH61Z7G7807D'",
+          "default": "'01KQ0FZ9BQ32R1N40MTQS9ZZNT'",
           "comment": null,
           "enumItems": [],
           "mappedType": "text"
@@ -37857,7 +37842,7 @@
           "keyName": "IDX_workflow_execution_updated_at_retention_time",
           "unique": false,
           "primary": false,
-          "expression": "CREATE INDEX \"IDX_workflow_execution_updated_at_retention_time\" ON public.workflow_execution USING btree (updated_at, retention_time) WHERE ((deleted_at IS NULL) AND (retention_time IS NOT NULL) AND ((state)::text = ANY ((ARRAY['done'::character varying, 'failed'::character varying, 'reverted'::character varying])::text[])))"
+          "expression": "CREATE INDEX \"IDX_workflow_execution_updated_at_retention_time\" ON public.workflow_execution USING btree (updated_at, retention_time) WHERE ((deleted_at IS NULL) AND (retention_time IS NOT NULL) AND ((state)::text = ANY (ARRAY[('done'::character varying)::text, ('failed'::character varying)::text, ('reverted'::character varying)::text])))"
         },
         {
           "columnNames": [

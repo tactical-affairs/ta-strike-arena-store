@@ -29,8 +29,7 @@ type PurchaseOrder = {
 };
 
 const STATUS_COLORS: Record<string, "grey" | "blue" | "orange" | "green" | "red"> = {
-  draft: "grey",
-  submitted: "blue",
+  open: "blue",
   partial: "orange",
   closed: "green",
   canceled: "red",

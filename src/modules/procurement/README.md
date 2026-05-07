@@ -19,7 +19,7 @@ Five entities, all in `models/`:
 | Entity | Purpose |
 |---|---|
 | `Supplier` | Vendors we buy from (name, contact, lead time, currency) |
-| `PurchaseOrder` | Header for an order to a supplier; statuses: `draft → submitted → partial → closed` (plus `canceled`) |
+| `PurchaseOrder` | Header for an order to a supplier; statuses: `open → partial → closed` (plus `canceled`) |
 | `PurchaseOrderLine` | One SKU on a PO; stores `qty_ordered`, `qty_received`, `unit_cost` |
 | `PoAdjustment` | Shipping / discount / tariff / other. Allocated across lines at receive time |
 | `InventoryLot` | A batch of inventory at a specific landed cost — the FIFO layer. `qty_initial`, `qty_remaining`, `unit_cost`, `received_at`, `status ∈ {active, exhausted, damaged}`, `source ∈ {po, return_restock, opening_balance}` |
@@ -32,7 +32,7 @@ Link files in `src/links/` wire three of these to core Medusa:
 
 ## Workflows (service methods)
 
-- **`createPurchaseOrderWithLines`** — admin creates a draft PO with
+- **`createPurchaseOrderWithLines`** — admin creates an open PO with
   its lines and optional adjustments in one call.
 - **`computeLandedUnitCosts`** — allocates PO-level adjustments
   across lines by extended value (GAAP-standard); returns

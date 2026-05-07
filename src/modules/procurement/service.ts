@@ -87,7 +87,7 @@ class ProcurementModuleService extends MedusaService({
   CogsEntry,
 }) {
   /**
-   * Build a draft PO with its lines in one call. Lines are created
+   * Build an open PO with its lines in one call. Lines are created
    * via the auto-generated createPurchaseOrderLines method inherited
    * from MedusaService.
    */
@@ -104,7 +104,7 @@ class ProcurementModuleService extends MedusaService({
     const poNumber = input.po_number ?? this.generatePoNumber();
     const po = await this.createPurchaseOrders({
       po_number: poNumber,
-      status: "draft",
+      status: "open",
       supplier_id: input.supplier_id,
       ordered_at: input.ordered_at
         ? new Date(input.ordered_at)

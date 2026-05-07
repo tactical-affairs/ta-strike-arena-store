@@ -8,15 +8,9 @@ import {
   Text,
 } from "@medusajs/ui";
 import { useEffect, useState } from "react";
+import { VariantTypeahead, variantLabel, type Variant } from "./variant-typeahead";
 
 type Supplier = { id: string; name: string };
-
-type Variant = {
-  id: string;
-  sku: string | null;
-  title: string;
-  product: { title: string } | null;
-};
 
 type Line = {
   variant_id: string;
@@ -102,7 +96,7 @@ export function CreatePurchaseOrderDrawer({
       ...lines,
       {
         variant_id: v.id,
-        variant_label: `${v.product?.title ?? ""} — ${v.title}${v.sku ? ` (${v.sku})` : ""}`,
+        variant_label: variantLabel(v),
         qty_ordered: qty,
         unit_cost,
       },
@@ -261,64 +255,53 @@ export function CreatePurchaseOrderDrawer({
                 </Table>
               )}
 
-              <div className="grid grid-cols-12 gap-2 items-end pt-2">
-                <div className="col-span-6">
-                  <Select
-                    value={newLine.variant_id}
-                    onValueChange={(v) =>
-                      setNewLine({ ...newLine, variant_id: v })
-                    }
-                  >
-                    <Select.Trigger>
-                      <Select.Value placeholder="Choose variant" />
-                    </Select.Trigger>
-                    <Select.Content>
-                      {variants.map((v) => (
-                        <Select.Item key={v.id} value={v.id}>
-                          {v.product?.title} — {v.title}
-                          {v.sku ? ` (${v.sku})` : ""}
-                        </Select.Item>
-                      ))}
-                    </Select.Content>
-                  </Select>
-                </div>
-                <div className="col-span-2">
-                  <Input
-                    type="number"
-                    min="1"
-                    placeholder="Qty"
-                    value={newLine.qty}
-                    onChange={(e) =>
-                      setNewLine({ ...newLine, qty: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="col-span-3">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Unit cost"
-                    value={newLine.unit_cost}
-                    onChange={(e) =>
-                      setNewLine({ ...newLine, unit_cost: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="col-span-1">
-                  <Button
-                    type="button"
-                    size="small"
-                    variant="secondary"
-                    onClick={addLine}
-                    disabled={
-                      !newLine.variant_id ||
-                      !newLine.qty ||
-                      !newLine.unit_cost
-                    }
-                  >
-                    Add
-                  </Button>
+              <div className="space-y-2 pt-2">
+                <VariantTypeahead
+                  variants={variants}
+                  value={newLine.variant_id}
+                  onChange={(id) =>
+                    setNewLine({ ...newLine, variant_id: id })
+                  }
+                />
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-4">
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder="Qty"
+                      value={newLine.qty}
+                      onChange={(e) =>
+                        setNewLine({ ...newLine, qty: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="col-span-5">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Unit cost"
+                      value={newLine.unit_cost}
+                      onChange={(e) =>
+                        setNewLine({ ...newLine, unit_cost: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <Button
+                      type="button"
+                      size="small"
+                      variant="secondary"
+                      onClick={addLine}
+                      disabled={
+                        !newLine.variant_id ||
+                        !newLine.qty ||
+                        !newLine.unit_cost
+                      }
+                    >
+                      Add line
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
