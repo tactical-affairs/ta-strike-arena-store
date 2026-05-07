@@ -188,6 +188,32 @@ Custom top-level module at `src/modules/procurement/` that owns purchase orders,
 
 TypeScript compiles to `.medusa/server/` (git-ignored). The admin dashboard compiles to `.medusa/admin/`. Do not edit files in `.medusa/`.
 
+### Railway build pipeline
+
+Deploys go through a custom **multi-stage Dockerfile** at the repo root, **not** Railpack. `railway.json` pins `build.builder=DOCKERFILE` so Railway doesn't fall back to its default builder. Source-only deploys typically take ~5–10 min once the BuildKit npm cache is warm; `package-lock.json` changes invalidate the deps stage and add ~20–30 min to that one deploy.
+
+**Layout:**
+
+| Stage | Purpose |
+|---|---|
+| `deps` | `npm ci` against root `package.json` for full deps (build needs devDeps). Cached as long as `package*.json` is unchanged. |
+| `build` | `COPY . .` + `npm run build` — runs `medusa build && cd .medusa/server && npm install --omit=dev`, producing a self-contained `.medusa/server/` with prod-only `node_modules`. |
+| `runtime` | `node:22-bookworm-slim` with only `/app/package.json` and `/app/.medusa/` copied across. `CMD ["npm", "start"]`. |
+
+**Why `npm start` from `/app` and not direct `npx medusa start` from `/app/.medusa/server`:** during the first Dockerfile rollout the container ran `medusa db:migrate` cleanly but the server never bound to port 9000 — runtime logs cut off after `Migration scripts completed` and Railway returned 502s. Deferring to the npm script (which has its own `cd .medusa/server` baked in) was the only invocation pattern that consistently produced a serving container. Don't change it without testing in prod.
+
+**BuildKit cache mount, Railway-specific syntax:**
+
+```dockerfile
+RUN --mount=type=cache,id=s/<RAILWAY_SERVICE_ID>-npm,target=/root/.npm npm ci
+```
+
+Railway's BuildKit fork **requires** the `id=` field, **and** the id must be prefixed with `s/<service-id>-` to scope the cache to this service (the shared builder pool would reject otherwise). The medusa service ID is hardcoded in the Dockerfile; if you ever migrate to a different service, update both `RUN` lines.
+
+**`.dockerignore`** excludes `.medusa/`, `.cache/`, `static/`, `.env*`, `.git/`, the symlinks to sibling repos (`ta-strike-arena-website`, `ta-player-app`), and integration tests so the build context stays small (~400 KB) and the runtime image doesn't ship dev-only data.
+
+**Deploy command** (from this directory): `railway up --service medusa`. Migrations apply automatically on each container boot via the `start` script.
+
 ### Testing Patterns
 
 Tests use `@medusajs/test-utils`. Integration tests use `medusaIntegrationTestRunner`:
