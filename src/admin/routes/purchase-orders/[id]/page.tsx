@@ -926,29 +926,31 @@ function ReceiveDrawer({
       }
 
       // Look up inventory_item_id + human-readable label for each variant.
-      const variantIds = po.lines.map((l) => l.variant_id).filter(Boolean);
-      if (variantIds.length > 0) {
-        const params = new URLSearchParams({
-          id: variantIds.join(","),
-          fields:
-            "id,sku,title,product.title,inventory_items.inventory.id",
-        });
-        const varRes = await fetch(
-          `/admin/products/variants?${params.toString()}`,
+      // Walk products (same pattern as LinesSection) — the variants endpoint
+      // doesn't reliably hydrate the product relation in Medusa v2 admin.
+      const variantIds = new Set(
+        po.lines.map((l) => l.variant_id).filter(Boolean),
+      );
+      if (variantIds.size > 0) {
+        const prodRes = await fetch(
+          "/admin/products?limit=200&fields=id,title,variants.id,variants.sku,variants.title,variants.inventory_items.inventory.id",
           { credentials: "include" },
         );
-        const varData = await varRes.json();
+        const prodData = await prodRes.json();
         const invMap: Record<string, string> = {};
         const labelMap: Record<string, string> = {};
-        for (const v of varData.variants ?? []) {
-          const invItem = v.inventory_items?.[0]?.inventory?.id;
-          if (invItem) invMap[v.id] = invItem;
-          labelMap[v.id] = variantLabel({
-            id: v.id,
-            sku: v.sku ?? null,
-            title: v.title,
-            product: v.product ? { title: v.product.title } : null,
-          });
+        for (const p of prodData.products ?? []) {
+          for (const v of p.variants ?? []) {
+            if (!variantIds.has(v.id)) continue;
+            const invItem = v.inventory_items?.[0]?.inventory?.id;
+            if (invItem) invMap[v.id] = invItem;
+            labelMap[v.id] = variantLabel({
+              id: v.id,
+              sku: v.sku ?? null,
+              title: v.title,
+              product: { title: p.title },
+            });
+          }
         }
         setInventoryItemIds(invMap);
         setVariantLabels(labelMap);
