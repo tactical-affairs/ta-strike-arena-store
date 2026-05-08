@@ -68,6 +68,21 @@ export type ConsumeFifoResult = {
   uncovered_qty: number; // > 0 means we ran out of lots — posts with a warning
 };
 
+export type IssueReason =
+  | "demo"
+  | "sample"
+  | "internal_use"
+  | "damaged_post_receipt"
+  | "write_off";
+
+export type ConsumeForReasonInput = {
+  inventory_item_id: string;
+  qty: number;
+  reason: IssueReason;
+  notes?: string;
+  posted_at?: Date | string;
+};
+
 export type ReverseCogsInput = {
   order_id: string;
   order_line_item_id: string;
@@ -328,6 +343,7 @@ class ProcurementModuleService extends MedusaService({
       const lineCost = takeQty * unitCost;
 
       await this.createCogsEntries({
+        reason: "sale",
         order_id: input.order_id,
         order_line_item_id: input.order_line_item_id,
         lot_id: lot.id,
@@ -335,6 +351,80 @@ class ProcurementModuleService extends MedusaService({
         unit_cost: unitCost,
         total_cost: lineCost,
         currency: lot.currency,
+        posted_at: postedAt,
+      });
+
+      const newRemaining = lot.qty_remaining - takeQty;
+      await this.updateInventoryLots({
+        id: lot.id,
+        qty_remaining: newRemaining,
+        status: newRemaining === 0 ? "exhausted" : "active",
+      });
+
+      entries.push({
+        lot_id: lot.id,
+        qty: takeQty,
+        unit_cost: unitCost,
+        total_cost: lineCost,
+      });
+      totalCost += lineCost;
+      remaining -= takeQty;
+    }
+
+    return {
+      total_cost: totalCost,
+      entries,
+      uncovered_qty: remaining,
+    };
+  }
+
+  /**
+   * Consume FIFO lots for a NON-SALES reason (demo, sample, internal use,
+   * write-off, post-receipt damage). Mirrors `consumeFifo` but posts the
+   * resulting CogsEntry with `reason` set and order linkage left null.
+   *
+   * Caller is responsible for any inventory_level decrement on the
+   * Medusa-core side — this module stays ignorant of physical stock,
+   * matching the same boundary `receivePurchaseOrder` keeps.
+   */
+  async consumeForReason(
+    input: ConsumeForReasonInput,
+  ): Promise<ConsumeFifoResult> {
+    if (input.qty <= 0) {
+      return { total_cost: 0, entries: [], uncovered_qty: 0 };
+    }
+
+    const lots = await this.listInventoryLots(
+      {
+        inventory_item_id: input.inventory_item_id,
+        status: "active",
+      },
+      { order: { received_at: "ASC" } },
+    );
+
+    const postedAt = input.posted_at ? new Date(input.posted_at) : new Date();
+    const entries: ConsumeFifoResult["entries"] = [];
+    let remaining = input.qty;
+    let totalCost = 0;
+
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      if (lot.qty_remaining <= 0) continue;
+
+      const takeQty = Math.min(lot.qty_remaining, remaining);
+      const unitCost = Number(lot.unit_cost);
+      const lineCost = takeQty * unitCost;
+
+      await this.createCogsEntries({
+        reason: input.reason,
+        order_id: null,
+        order_line_item_id: null,
+        lot_id: lot.id,
+        qty: takeQty,
+        unit_cost: unitCost,
+        total_cost: lineCost,
+        currency: lot.currency,
+        notes: input.notes ?? null,
         posted_at: postedAt,
       });
 

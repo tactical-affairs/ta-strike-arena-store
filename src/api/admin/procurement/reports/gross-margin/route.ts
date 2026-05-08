@@ -53,8 +53,13 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 
   // Step 1: collect non-reversed CogsEntry rows in window, grouped
   // by order_line_item_id, along with their unit_item (via lot).
-  const entries = await procurement.listCogsEntries({});
+  // Gross margin only considers sales — non-sales reasons (demo, sample,
+  // write-off, etc.) post COGS without any revenue side, so they're
+  // excluded from this report. They show up under "non-sales COGS" in a
+  // separate report when that exists.
+  const entries = await procurement.listCogsEntries({ reason: "sale" });
   const inWindow = entries.filter((e) => {
+    if (!e.order_id || !e.order_line_item_id) return false;
     const posted = new Date(e.posted_at as unknown as string);
     if (posted < from || posted > to) return false;
     if (
@@ -73,23 +78,29 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   }
 
   // Per line_item: sum COGS; per line_item also remember one inv_id.
+  // After the filter above, order_id and order_line_item_id are guaranteed
+  // non-null, but TS doesn't propagate that — narrow locally.
   const cogsByLineItem = new Map<string, number>();
   const invIdByLineItem = new Map<string, string>();
   for (const e of inWindow) {
+    const lineItemId = e.order_line_item_id;
+    if (!lineItemId) continue;
     const invId = invItemByLot.get(e.lot_id);
     if (!invId) continue;
     cogsByLineItem.set(
-      e.order_line_item_id,
-      (cogsByLineItem.get(e.order_line_item_id) ?? 0) + Number(e.total_cost),
+      lineItemId,
+      (cogsByLineItem.get(lineItemId) ?? 0) + Number(e.total_cost),
     );
-    invIdByLineItem.set(e.order_line_item_id, invId);
+    invIdByLineItem.set(lineItemId, invId);
   }
 
   // Step 2: load the revenue side — unit_price × quantity per order
   // line item that appears in our COGS set. Query via `order` and
   // traverse to its items (direct `order_line_item` entity fetch via
   // query.graph doesn't resolve cleanly across modules).
-  const orderIds = [...new Set(inWindow.map((e) => e.order_id))];
+  const orderIds = [
+    ...new Set(inWindow.map((e) => e.order_id).filter((x): x is string => !!x)),
+  ];
   const revenueByLineItem = new Map<
     string,
     { revenue: number; qty: number }
