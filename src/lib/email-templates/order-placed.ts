@@ -39,10 +39,15 @@ export type OrderPlacedInput = {
   total: number | string;
 };
 
-const ACCENT = "#FF6A00";
-const TEXT = "#0B0D10";
-const SUBTLE = "#5C6470";
-const BORDER = "#E4E7EC";
+import {
+  ACCENT,
+  BORDER,
+  LOGO_DISPLAY_HEIGHT,
+  LOGO_DISPLAY_WIDTH,
+  LOGO_URL,
+  SUBTLE,
+  TEXT,
+} from "./branding";
 
 function fmtMoney(value: number | string | null | undefined, currency = "USD"): string {
   const n = Number(value ?? 0);
@@ -132,10 +137,8 @@ export function buildOrderPlacedHtml(order: OrderPlacedInput): string {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#FFFFFF;border-radius:8px;overflow:hidden;border:1px solid ${BORDER};">
         <tr>
           <td style="padding:24px 32px;border-bottom:4px solid ${ACCENT};">
-            <div style="font-size:14px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:${ACCENT};">
-              Strike Arena
-            </div>
-            <h1 style="margin:8px 0 0;font-size:22px;color:${TEXT};">
+            <img src="${LOGO_URL}" alt="Strike Arena" width="${LOGO_DISPLAY_WIDTH}" height="${LOGO_DISPLAY_HEIGHT}" style="display:block;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;height:${LOGO_DISPLAY_HEIGHT}px;width:${LOGO_DISPLAY_WIDTH}px;">
+            <h1 style="margin:16px 0 0;font-size:22px;color:${TEXT};">
               Order #${escapeHtml(String(order.display_id))} confirmed
             </h1>
           </td>
