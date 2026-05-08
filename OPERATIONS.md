@@ -21,14 +21,13 @@ drift. Never let it rot — a wrong SOP is worse than none.
 - [Order lifecycle](#order-lifecycle)
 - [Fulfillment](#fulfillment)
 - [Customer events](#customer-events)
+  - [Finding a customer's order](#finding-a-customers-order)
   - [Order status inquiry](#order-status-inquiry)
   - [Address change before ship](#address-change-before-ship)
   - [Cancel an unshipped order](#cancel-an-unshipped-order)
   - [Cancel a shipped order](#cancel-a-shipped-order)
   - [Return (RMA)](#return-rma)
-  - [Refund — full](#refund--full)
-  - [Refund — partial](#refund--partial)
-  - [Store credit](#store-credit)
+  - [Issuing a refund](#issuing-a-refund)
   - [Exchange](#exchange)
 - [Tax operations](#tax-operations)
 - [Reconciliation](#reconciliation)
@@ -191,6 +190,53 @@ Give the developer:
 They'll add the bundle and redeploy. Expect ~a day of lead time for
 new bundles.
 
+### Issuing a unit for non-sales reasons
+
+Sidebar → **Issue inventory**. Use this when stock leaves the
+warehouse for a reason that isn't a customer order — demos, samples,
+internal testing, post-receipt damage, write-offs.
+
+Why this page exists: Medusa core has a manual stock-quantity edit
+that can decrement on-hand inventory, but it bypasses the FIFO ledger
+and never posts a COGS entry. So your reports drift from physical
+reality. **Issue inventory** does the same physical decrement *and*
+walks the FIFO lots, posting a categorized COGS entry — the books
+stay accurate without an order existing.
+
+To issue:
+
+1. **Variant** — typeahead, same as the PO line picker. Search by
+   product name, variant title, or SKU.
+2. **Location** — defaults to the only location if there's just one;
+   otherwise pick. The page shows live "N units available at this
+   location" once you've picked both.
+3. **Quantity** — must be ≤ the available number shown.
+4. **Reason** — pick the closest match:
+   - **Demo** — unit at a trade show, range day, sales call. Often
+     comes back; if it does, treat as a return-restock.
+   - **Sample** — sent to a reviewer, content creator, retailer
+     prospect. Usually doesn't come back.
+   - **Internal use** — consumed by the team for QA, training,
+     reference. Won't come back.
+   - **Damaged (post-receipt)** — broken in the warehouse after the
+     PO was received in good condition. See
+     [When a PO arrives with damaged items](#when-a-po-arrives-with-damaged-items)
+     for damage on the receiving side.
+   - **Write-off** — catch-all when no other reason fits (lost,
+     expired, destroyed in transit during internal moves, …).
+5. **Notes** — write enough to find this row again in 6 months. Who
+   took it, where it went, any case/PO numbers.
+6. **Issue from inventory** — submits.
+
+The "Recent issues" panel at the bottom shows what's been issued
+this session for quick verification. Available quantity decrements
+optimistically so you can issue another unit of the same variant
+without a refresh.
+
+If the demo/sample comes back resellable, ask the developer for an
+inventory adjustment that creates a `return_restock` lot — there's
+no admin-UI button for that yet.
+
 ---
 
 ## Purchase orders + cost tracking
@@ -200,23 +246,83 @@ landed cost (unit cost from the supplier plus allocated shipping,
 tariffs, and discounts). That's what powers the COGS, gross margin,
 and inventory valuation reports.
 
+### Adding or editing a supplier
+
+Sidebar → **Suppliers**. The list shows every vendor we buy from along
+with their default lead time and currency.
+
+To add a new supplier:
+
+1. **Add supplier**.
+2. Fill in **Name** (the display name on POs), **Contact email** /
+   **Contact phone** (the rep we email/call about orders), default
+   **Lead time** in days (used as the prefilled "expected delivery"
+   on new POs), default **Currency** (USD unless they invoice in
+   something else).
+3. **Save**.
+
+To edit an existing supplier: click into the row, change the fields
+that are wrong, **Save**. Edits are non-destructive — historical POs
+keep their original supplier snapshot.
+
+To deactivate a supplier we no longer use: edit them and toggle
+**Active** off. Inactive suppliers don't show up in the new-PO picker
+but stay attached to their historical POs.
+
 ### Creating a purchase order (PO)
 
 Sidebar → **Purchase Orders → New purchase order**.
 
-1. Pick the supplier. Create one from **Suppliers → Add supplier**
-   first if the vendor is new.
-2. Optional: fill in the expected delivery date and any notes.
-3. Add line items — one per SKU you're buying. For each line:
-   - Pick the product variant from the dropdown.
+1. **PO number** (optional). Leave blank to auto-generate (`PO-1001`,
+   `PO-1002`, …). If you have an external PO from the supplier or
+   your own internal numbering scheme, type it in here so the records
+   line up. PO numbers must be unique — if the number is already in
+   use you'll see an inline error.
+2. Pick the supplier. If the vendor is new, see
+   [Adding or editing a supplier](#adding-or-editing-a-supplier)
+   first.
+3. Optional: fill in the expected delivery date and any notes.
+4. Add line items — one per SKU you're buying. The variant picker is
+   a typeahead — start typing the product name, variant title, or SKU
+   and the matches filter live. Click the match to select. For each
+   line:
    - Enter the quantity ordered.
    - Enter the unit cost the supplier is charging (pre-shipping, pre-tariff).
-4. **Adjustments** — if the supplier is charging for shipping,
+   - Click **Add line**. The line appears in the table above; the
+     picker resets so you can add the next.
+5. **Adjustments** — if the supplier is charging for shipping,
    applying a discount, or passing on tariffs/duties, add those as
    separate lines. Pick the type (shipping / discount / tariff / other),
    enter the amount, add an optional note. The drawer shows the
    running total (lines subtotal + adjustments = PO total).
-5. **Create PO**.
+6. **Create PO**. The PO opens in the `open` status (live, awaiting
+   delivery) — you can still edit metadata and lines until it's closed
+   or canceled.
+
+### Editing or canceling an open PO
+
+Sometimes the supplier sends a revised invoice or you realize a line
+quantity was wrong. While the PO is `open` (no items received yet) or
+`partial` (some items received), the detail page lets you correct
+mistakes:
+
+- **Edit (header)** — changes the PO number, supplier, expected
+  delivery date, or notes. Doesn't touch the lines or money.
+- **Per-line edit** — type a new quantity or unit cost directly into
+  the line's input fields; the **Save** button next to the row turns
+  active when there's a pending change. You can't drop quantity below
+  whatever has already been received.
+- **Per-line remove** (× icon) — only available on lines with zero
+  receipts. Once a line has a single received unit, the lot is real
+  and the line is locked.
+- **Add line** — same form as PO creation, below the lines table.
+- **Cancel PO** — terminal. Refused if any line has been received
+  (those lots already exist in inventory and can't be unwound from a
+  PO action). For canceled POs, lines and adjustments are preserved
+  for audit.
+
+Closed POs (every line fully received) are read-only — the lots are
+in inventory and no edit could change that history.
 
 ### Receiving stock
 
@@ -252,6 +358,40 @@ That mirrors accounting practice — we don't rewrite history. Any
 variance between the original landed cost and the true final cost
 is absorbed into future receipts or posted as a manual journal
 entry by the accountant.
+
+### When a PO arrives with damaged items
+
+Two-step flow that keeps the PO record clean and the damage properly
+costed.
+
+**What you receive**: 10 units ordered, 8 are perfect, 2 arrived
+broken (water damage, crushed packaging, dead-on-arrival, etc.).
+
+**Wrong way**: receive 8 and pretend the supplier shipped only 8. The
+PO record drifts from the supplier's invoice, the landed-cost math
+goes sideways, and there's no audit trail of the damage.
+
+**Right way**:
+
+1. **Receive the full quantity** (10 in our example) on the PO. All
+   10 units are now in inventory at full landed cost. This matches
+   what the supplier invoiced; the PO + lots reconcile.
+2. **Sidebar → Issue inventory**. Pick the variant, the location,
+   quantity = 2, **Reason = Damaged (post-receipt)**. In the notes,
+   reference the supplier and PO number ("2 units broken on arrival,
+   supplier ACME, PO-1042; pictures in support@strikearena.net").
+   Submit.
+3. The 2 units come off the books at their landed cost — a COGS
+   entry posts under reason `damaged_post_receipt`, and on-hand
+   inventory drops to 8.
+
+When the supplier eventually credits us for the damage, post that as
+a discount adjustment on the original PO. The two flows together
+land the bookkeeping correctly: the PO records what was bought, the
+issue records what was lost, the discount records what was refunded.
+
+If the supplier won't credit, the COGS entry is the loss — show up
+in the [Slow movers / write-off review](#slow-movers).
 
 ### Viewing cost basis per product
 
@@ -307,10 +447,13 @@ is a planned improvement.)
    `payment_status=authorized` (FluidPay authorized but did not
    capture — see [note on capture mode](#capture-mode) below),
    `fulfillment_status=not_fulfilled`.
-3. `order.placed` event fires → subscriber pushes the transaction to
-   **TaxJar** for nexus tracking + filing.
-4. Customer gets an order-confirmation email (EmailJS, configured on
-   the website side).
+3. `order.placed` event fires → multiple subscribers run in parallel:
+   - **TaxJar** sync — pushes the transaction for nexus tracking + filing.
+   - **Email** — Medusa's notification module sends the customer an
+     order-confirmation email via AWS SES (the custom `aws-ses`
+     notification provider; same SMTP credentials as the storefront's
+     contact form). The same plumbing fires on `order.shipment_created`
+     (tracking email) and `order.canceled` (cancellation receipt).
 
 After this, the order is waiting on you. Nothing's been shipped yet;
 the card is only authorized (not captured).
@@ -439,6 +582,38 @@ it's wrong you're looking at a return + reship, not a void.
 Each subsection below starts with a brief **What happens** summary,
 then the concrete steps in each of the four systems.
 
+### Finding a customer's order
+
+Most customer events start with this — they email asking about a
+specific order, you need to pull it up. The Medusa Admin search is
+forgiving about what you put in.
+
+Sidebar → **Orders**. The search box at the top accepts:
+
+- **Order display ID** like `1042` or `#1042` (the customer-facing
+  number on their confirmation email).
+- **Customer email** like `jane@example.com` (matches the order's
+  email field, not the customer record's primary email — they're
+  usually the same but not always for guest checkouts).
+- **Internal order ID** like `order_01ABC...` (only relevant when
+  someone passes you one — usually a developer in a support ticket).
+- **Customer name** (first or last).
+
+Filters in the right rail: status, payment status, fulfillment
+status, date range. Useful when the customer can't remember the
+order number — search by their name + narrow to "last 30 days".
+
+Once you've opened the order, the most useful things to scan:
+
+- Top header: order number, total, payment status, fulfillment status
+- **Payments** section: amount authorized, amount captured, refunds,
+  link to FluidPay transaction
+- **Fulfillment** section: tracking number + Shippo tracking URL
+- **Customer** section: shipping address, billing address, customer
+  notes from the checkout form
+- **Activity** timeline at the bottom: every status transition with
+  timestamps — answers "when did this ship?" definitively
+
 ### Order status inquiry
 
 **What happens**: customer asks "where's my order?"
@@ -534,9 +709,18 @@ refund sync (below) updates TaxJar.
 **Customer-facing**: "Your return has been received. Your refund of
 $X will be processed within 2 business days to your original card."
 
-### Refund — full
+### Issuing a refund
 
-**What happens**: returning customer's entire order, full money-back.
+Three ways to refund — pick the one that fits the situation, then
+follow the steps for that mode.
+
+| Mode | When to use |
+|---|---|
+| **Full refund** | Customer returned the whole order, or order is being canceled before any value was delivered. |
+| **Partial refund** | Customer keeps most of the order; one item arrived damaged or was missing. Common after a partial return. |
+| **Store credit** | Customer prefers a credit they can use again (often faster than waiting on a card refund). |
+
+#### Full refund
 
 - **Medusa**: Admin → [order] → **Payments → Refund → full amount →
   confirm**.
@@ -548,38 +732,50 @@ $X will be processed within 2 business days to your original card."
   refund subscriber path. The refunded sales tax is reported against
   the same filing period, reducing your next return.
 - **Customer-facing**: email confirmation with refund amount + 3-5
-  day ETA.
+  day ETA. Sample: "Your refund of $X has been issued. It typically
+  takes 3-5 business days to appear on your statement."
 
-### Refund — partial
-
-**What happens**: customer is keeping most of the order but wants a
-partial refund (e.g., one item damaged, rest kept).
+#### Partial refund
 
 - **Medusa**: Admin → [order] → **Payments → Refund → specify amount
-  → confirm**.
+  → confirm**. Match the dollars to the items being credited (item
+  unit price × qty + their pro-rated tax + any return shipping if
+  you're absorbing that). The order detail page shows the full
+  breakdown to copy from.
 - **FluidPay**: partial refund against the captured transaction.
+  Same 3-5 day ETA as a full refund.
 - **TaxJar**: sync with `sales_tax` adjusted proportionally (Medusa
   calculates the tax portion of the partial refund based on the items
   refunded).
-- **Customer-facing**: explain which items are being refunded and why.
+- **Customer-facing**: be explicit about which items are being
+  refunded and why so the dollar amount makes sense to them. Sample:
+  "I've refunded $48.50 for the broken laser cartridge — that's the
+  item subtotal of $44.99 plus $3.51 in WA sales tax. Your other
+  items are yours to keep."
 
-### Store credit
+#### Store credit
 
-**What happens**: customer prefers store credit over a refund (often
-faster for them; no card-refund delay).
+Medusa v2 doesn't have a native store-credit module yet, so this is
+a manual workaround:
 
-Medusa v2 doesn't have a native store-credit module yet. Workaround:
-
-1. In Medusa Admin → Customers → [customer] → **Add metadata → key:
-   `store_credit`, value: `<amount>`**.
-2. Email the customer a single-use promotion code for that amount
-   (Promotions tab). Codes can be single-use-per-customer.
-3. Do NOT refund via FluidPay. The money stays with us.
-4. Document the store credit in a shared spreadsheet (until the
-   native module lands) so it's not forgotten.
+1. **Customers → [customer] → Add metadata** with key `store_credit`
+   and value = the credit amount in dollars (e.g. `50.00`).
+2. **Promotions → Create promotion**:
+   - Type: fixed amount
+   - Value: the credit amount
+   - Code: a unique single-use code (e.g. `CREDIT-COLIN-50`)
+   - Limit: 1 use, restricted to that customer's email
+3. Email the customer the code and the rules ("good toward your next
+   order; one-time use; no expiration").
+4. **Do NOT** refund via FluidPay — the money stays with us, the
+   credit is the alternative.
+5. Log the credit in the shared store-credit spreadsheet so it
+   doesn't get forgotten if Medusa metadata gets lost in some
+   future migration.
 
 Phase-2 improvement: build a proper `store-credit` module using the
-customer metadata + a promotion-auto-apply subscriber.
+customer metadata + a promotion-auto-apply subscriber. Until then,
+the spreadsheet is the source of truth.
 
 ### Exchange
 

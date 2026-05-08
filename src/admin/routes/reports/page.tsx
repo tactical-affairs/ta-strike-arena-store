@@ -10,7 +10,7 @@ import {
   Tabs,
   Text,
 } from "@medusajs/ui";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type ValuationRow = {
   sku: string | null;

@@ -14,7 +14,8 @@ export const SUBTLE = "#5C6470";
 export const BORDER = "#E4E7EC";
 
 export const LOGO_URL = "https://strikearena.net/email/strike-arena-logo.png";
-// Source is 400×134 (2x retina); display at half so we get a crisp logo
-// across mainstream clients without bloating per-email payload size.
-export const LOGO_DISPLAY_WIDTH = 200;
-export const LOGO_DISPLAY_HEIGHT = 67;
+// Source is 400×134 (2x retina); display under half so we get a crisp logo
+// across mainstream clients without bloating per-email payload size — and
+// without overpowering the body content visually.
+export const LOGO_DISPLAY_WIDTH = 170;
+export const LOGO_DISPLAY_HEIGHT = 57;

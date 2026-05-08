@@ -29,7 +29,9 @@
     "@medusajs/file-s3": "2.13.6",
     "@medusajs/framework": "2.13.6",
     "@medusajs/medusa": "2.13.6",
-    "nodemailer": "^7.0.13"
+    "nodemailer": "^7.0.13",
+    "react-markdown": "^8.0.7",
+    "remark-gfm": "^3.0.1"
   },
   "devDependencies": {
     "@medusajs/test-utils": "2.13.6",
