@@ -9,7 +9,10 @@
  */
 
 import type { SubscriberArgs, SubscriberConfig } from "@medusajs/framework";
-import { Modules } from "@medusajs/framework/utils";
+import {
+  ContainerRegistrationKeys,
+  Modules,
+} from "@medusajs/framework/utils";
 import {
   buildOrderCanceledHtml,
   buildOrderCanceledText,
@@ -21,19 +24,32 @@ export default async function orderCanceledEmailHandler({
   container,
 }: SubscriberArgs<{ id: string }>) {
   const logger = container.resolve("logger");
-  const orderModule = container.resolve(Modules.ORDER);
   const notificationModule = container.resolve(Modules.NOTIFICATION);
+  const query = container.resolve(ContainerRegistrationKeys.QUERY);
 
-  let order: Record<string, unknown>;
+  let order: Record<string, unknown> | undefined;
   try {
-    order = (await orderModule.retrieveOrder(data.id)) as unknown as Record<
-      string,
-      unknown
-    >;
+    const { data: rows } = await query.graph({
+      entity: "order",
+      fields: [
+        "id",
+        "display_id",
+        "email",
+        "currency_code",
+        "total",
+        "canceled_at",
+      ],
+      filters: { id: data.id },
+    });
+    order = rows[0] as Record<string, unknown> | undefined;
   } catch (err) {
     logger.error(
-      `[order-canceled-email] failed to retrieve order ${data.id}: ${(err as Error).message}`,
+      `[order-canceled-email] failed to load order ${data.id}: ${(err as Error).message}`,
     );
+    return;
+  }
+  if (!order) {
+    logger.warn(`[order-canceled-email] order ${data.id} not found`);
     return;
   }
 

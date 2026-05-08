@@ -46,7 +46,6 @@ export default async function orderShippedEmailHandler({
   container,
 }: SubscriberArgs<Payload>) {
   const logger = container.resolve("logger");
-  const orderModule = container.resolve(Modules.ORDER);
   const notificationModule = container.resolve(Modules.NOTIFICATION);
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
 
@@ -88,15 +87,30 @@ export default async function orderShippedEmailHandler({
     return;
   }
 
-  let order: Record<string, unknown>;
+  let order: Record<string, unknown> | undefined;
   try {
-    order = (await orderModule.retrieveOrder(orderId, {
-      relations: ["items"],
-    })) as unknown as Record<string, unknown>;
+    const { data: rows } = await query.graph({
+      entity: "order",
+      fields: [
+        "id",
+        "display_id",
+        "email",
+        "items.id",
+        "items.title",
+        "items.product_title",
+        "items.variant_title",
+      ],
+      filters: { id: orderId },
+    });
+    order = rows[0] as Record<string, unknown> | undefined;
   } catch (err) {
     logger.error(
-      `[order-shipped-email] failed to retrieve order ${orderId}: ${(err as Error).message}`,
+      `[order-shipped-email] failed to load order ${orderId}: ${(err as Error).message}`,
     );
+    return;
+  }
+  if (!order) {
+    logger.warn(`[order-shipped-email] order ${orderId} not found`);
     return;
   }
 

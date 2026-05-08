@@ -14,7 +14,10 @@
  */
 
 import type { SubscriberArgs, SubscriberConfig } from "@medusajs/framework";
-import { Modules } from "@medusajs/framework/utils";
+import {
+  ContainerRegistrationKeys,
+  Modules,
+} from "@medusajs/framework/utils";
 import {
   buildOrderPlacedHtml,
   buildOrderPlacedText,
@@ -26,18 +29,38 @@ export default async function orderPlacedEmailHandler({
   container,
 }: SubscriberArgs<{ id: string }>) {
   const logger = container.resolve("logger");
-  const orderModule = container.resolve(Modules.ORDER);
   const notificationModule = container.resolve(Modules.NOTIFICATION);
+  const query = container.resolve(ContainerRegistrationKeys.QUERY);
 
-  let order: Record<string, unknown>;
+  // Money totals on Medusa v2 orders are computed only when listed in `fields` —
+  // retrieveOrder() with `relations` alone returns null/0 for total/shipping/tax.
+  let order: Record<string, unknown> | undefined;
   try {
-    order = (await orderModule.retrieveOrder(data.id, {
-      relations: ["items", "shipping_address"],
-    })) as unknown as Record<string, unknown>;
+    const { data: rows } = await query.graph({
+      entity: "order",
+      fields: [
+        "id",
+        "display_id",
+        "email",
+        "currency_code",
+        "subtotal",
+        "shipping_total",
+        "tax_total",
+        "total",
+        "items.*",
+        "shipping_address.*",
+      ],
+      filters: { id: data.id },
+    });
+    order = rows[0] as Record<string, unknown> | undefined;
   } catch (err) {
     logger.error(
-      `[order-placed-email] failed to retrieve order ${data.id}: ${(err as Error).message}`,
+      `[order-placed-email] failed to load order ${data.id}: ${(err as Error).message}`,
     );
+    return;
+  }
+  if (!order) {
+    logger.warn(`[order-placed-email] order ${data.id} not found`);
     return;
   }
 
