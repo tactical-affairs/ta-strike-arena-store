@@ -49,8 +49,8 @@ const OperationsManualPage = () => {
   }, []);
 
   return (
-    <Container className="p-0">
-      <div className="px-6 py-4 border-b">
+    <Container className="p-0 lg:h-[calc(100vh-4rem)] lg:flex lg:flex-col lg:overflow-hidden">
+      <div className="px-6 py-4 border-b shrink-0">
         <Heading level="h2">Operations Manual</Heading>
         <Text size="small" className="text-ui-fg-subtle">
           Day-to-day procedures for running Strike Arena. Keep this open
@@ -59,19 +59,20 @@ const OperationsManualPage = () => {
         </Text>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-0 lg:min-h-screen">
-        <aside className="border-b lg:border-b-0 lg:border-r border-ui-border-base lg:sticky lg:top-0 lg:h-screen">
-          <div className="px-6 py-4 lg:h-full lg:overflow-y-auto">
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter sections…"
-              className="mb-4"
-            />
-            <Toc entries={entries} activeId={activeId} />
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-0 lg:flex-1 lg:min-h-0">
+        <aside className="border-b lg:border-b-0 lg:border-r border-ui-border-base lg:overflow-y-auto px-6 py-4">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter sections…"
+            className="mb-4"
+          />
+          <Toc entries={entries} activeId={activeId} />
         </aside>
-        <div ref={contentRef} className="px-6 py-6 max-w-3xl scroll-smooth">
+        <div
+          ref={contentRef}
+          className="px-6 py-6 max-w-3xl lg:overflow-y-auto scroll-smooth"
+        >
           <Content markdown={MANUAL_MD} />
         </div>
       </div>
