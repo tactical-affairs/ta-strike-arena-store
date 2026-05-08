@@ -770,6 +770,43 @@ not worth the effort for <$20 orders.
 
 ## Status reference
 
+When you open an order, three pills appear at the top of the page —
+they map to three separate fields, **not** the same thing said three
+times. The order page also shows a plain-English summary banner above
+the pills explaining what state the order is in; the table below is
+for when you want the underlying detail.
+
+### What the three pills mean
+
+| Position | Field | Question it answers |
+|---|---|---|
+| 1st | `status` | Is the order itself live, complete, or canceled? |
+| 2nd | `payment_status` | Where is the money? Authorized, captured, refunded, voided? |
+| 3rd | `fulfillment_status` | Where is the box? Not yet picked, packed, shipped, delivered, returned? |
+
+So if you see two pills that both read "Canceled" plus a "Not
+fulfilled", that's saying: the order is canceled, the payment was
+voided (also called "canceled" in this enum), and no shipment ever
+happened. Three statements, not one repeated.
+
+The summary banner at the top of the page handles this translation
+for you — read that first; only dig into the pills when you need to
+explain a detail to a customer.
+
+### Common combinations
+
+| Pills | What it means |
+|---|---|
+| `pending` · `authorized` · `not_fulfilled` | Brand-new order. Card is authorized; capture and ship. |
+| `pending` · `captured` · `not_fulfilled` | Paid. Awaiting your fulfillment. |
+| `pending` · `captured` · `fulfilled` | Label bought; box is sitting in the warehouse waiting for carrier handoff. |
+| `pending` · `captured` · `shipped` | In transit. Tracking updates flow in automatically. |
+| `completed` · `captured` · `delivered` | Done. Customer has the package. |
+| `canceled` · `canceled` · `not_fulfilled` | Canceled cleanly before any charge or ship — the most common cancellation outcome. |
+| `canceled` · `refunded` · `not_fulfilled` | Canceled after the charge was captured; full refund issued. |
+| `pending` · `partially_refunded` · `partially_returned` | Some items came back; partial refund posted. The rest is still with the customer. |
+| `requires_action` · (any) · (any) | Medusa flagged something off. Open the order and read the activity timeline. |
+
 ### Order statuses
 
 | `status` | Meaning |

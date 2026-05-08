@@ -1108,6 +1108,30 @@ order, and reach out to those customers.
 
 ## Appendix: status references
 
+### How to read the three status pills on an order
+
+The order detail page shows three pills at the top, one per state
+field. They are NOT the same thing repeated three times — each pill
+maps to a different concern.
+
+| Position | Field | Concern |
+|---|---|---|
+| 1st | `status` | The order itself: pending / completed / canceled / requires_action |
+| 2nd | `payment_status` | Money: authorized / captured / refunded / canceled (= voided) |
+| 3rd | `fulfillment_status` | Box: not_fulfilled / fulfilled / shipped / delivered / returned |
+
+A canceled order placed before payment capture shows `canceled` ·
+`canceled` · `not_fulfilled` — three different statements, not one
+repeated. The custom Order Status Summary widget at
+`src/admin/widgets/order-status-summary.tsx` translates these combos
+into a one-line banner above the pills for ops staff who don't want
+to memorize the matrix.
+
+Common combinations and their interpretation are documented in the
+in-app Operations Manual (`/app/operations-manual` → Status
+reference) so seasonal staff have it on hand without leaving the
+admin UI.
+
 ### Medusa order statuses
 
 | `status` | Meaning |
