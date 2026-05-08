@@ -59,15 +59,17 @@ const OperationsManualPage = () => {
         </Text>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-0">
-        <aside className="border-b lg:border-b-0 lg:border-r border-ui-border-base px-6 py-4 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-auto">
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter sections…"
-            className="mb-4"
-          />
-          <Toc entries={entries} activeId={activeId} />
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-0 lg:min-h-screen">
+        <aside className="border-b lg:border-b-0 lg:border-r border-ui-border-base lg:sticky lg:top-0 lg:h-screen">
+          <div className="px-6 py-4 lg:h-full lg:overflow-y-auto">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filter sections…"
+              className="mb-4"
+            />
+            <Toc entries={entries} activeId={activeId} />
+          </div>
         </aside>
         <div ref={contentRef} className="px-6 py-6 max-w-3xl scroll-smooth">
           <Content markdown={MANUAL_MD} />
