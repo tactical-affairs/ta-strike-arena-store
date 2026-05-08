@@ -87,6 +87,31 @@ if (paymentProviders.length > 0) {
   })
 }
 
+if (process.env.AWS_SMTP_USERNAME && process.env.AWS_SMTP_PASSWORD) {
+  modules.push({
+    resolve: "@medusajs/medusa/notification",
+    options: {
+      providers: [
+        {
+          resolve: "./src/modules/notification-aws-ses",
+          id: "aws-ses",
+          options: {
+            channels: ["email"],
+            endpoint:
+              process.env.AWS_SMTP_ENDPOINT ??
+              "email-smtp.us-east-2.amazonaws.com",
+            username: process.env.AWS_SMTP_USERNAME,
+            password: process.env.AWS_SMTP_PASSWORD,
+            from:
+              process.env.MEDUSA_EMAIL_FROM ??
+              '"Strike Arena" <orders@strikearena.net>',
+          },
+        },
+      ],
+    },
+  })
+}
+
 if (process.env.TAXJAR_API_KEY) {
   modules.push({
     resolve: "@medusajs/medusa/tax",
