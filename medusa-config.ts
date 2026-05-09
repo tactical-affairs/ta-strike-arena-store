@@ -79,6 +79,10 @@ const modules: Array<Record<string, unknown>> = [
   {
     resolve: "./src/modules/procurement",
   },
+  // Customer-facing back-in-stock notification queue.
+  {
+    resolve: "./src/modules/back-in-stock",
+  },
 ]
 if (paymentProviders.length > 0) {
   modules.push({

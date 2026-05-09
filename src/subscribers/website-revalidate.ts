@@ -134,6 +134,81 @@ export default async function websiteRevalidate({
           filters: { id: [triggerId] },
         });
         p = (data as Array<{ handle?: string; collection?: { handle?: string } }> | undefined)?.[0];
+      } else if (
+        event.name?.startsWith("inventory-level.") ||
+        event.name?.startsWith("inventory-item.")
+      ) {
+        // Resolve the affected inventory_item -> linked variants -> products.
+        // For inventory-level events, event.data.id is a level id; first
+        // resolve to its inventory_item_id.
+        let inventoryItemId = triggerId;
+        if (event.name.startsWith("inventory-level.")) {
+          const { data } = await query.graph({
+            entity: "inventory_level",
+            fields: ["id", "inventory_item_id"],
+            filters: { id: [triggerId] },
+          });
+          inventoryItemId =
+            (data as Array<{ inventory_item_id?: string }>)[0]
+              ?.inventory_item_id ?? "";
+        }
+        if (inventoryItemId) {
+          const { data } = await query.graph({
+            entity: "inventory_item",
+            fields: [
+              "id",
+              "variants.product.handle",
+              "variants.product.collection.handle",
+            ],
+            filters: { id: [inventoryItemId] },
+          });
+          const variants = (data as Array<{
+            variants?: Array<{
+              product?: { handle?: string; collection?: { handle?: string } };
+            }>;
+          }>)[0]?.variants ?? [];
+          // Bust every linked product/collection. Usually one variant per
+          // inventory item; loop is defensive.
+          for (const v of variants) {
+            if (v.product?.handle) {
+              tags.add(`product:${v.product.handle}`);
+              paths.add(`/shop/${v.product.handle}`);
+            }
+            if (v.product?.collection?.handle) {
+              tags.add(`collection:${v.product.collection.handle}`);
+              paths.add(`/shop/collections/${v.product.collection.handle}`);
+            }
+          }
+        }
+      } else if (event.name?.startsWith("reservation-item.")) {
+        // Order placed/canceled changes available stock. Resolve
+        // reservation -> inventory_item -> variant -> product.
+        const { data } = await query.graph({
+          entity: "reservation",
+          fields: [
+            "id",
+            "inventory_item.variants.product.handle",
+            "inventory_item.variants.product.collection.handle",
+          ],
+          filters: { id: [triggerId] },
+        });
+        const variants = (data as Array<{
+          inventory_item?: {
+            variants?: Array<{
+              product?: { handle?: string; collection?: { handle?: string } };
+            }>;
+          };
+        }>)[0]?.inventory_item?.variants ?? [];
+        for (const v of variants) {
+          if (v.product?.handle) {
+            tags.add(`product:${v.product.handle}`);
+            paths.add(`/shop/${v.product.handle}`);
+          }
+          if (v.product?.collection?.handle) {
+            tags.add(`collection:${v.product.collection.handle}`);
+            paths.add(`/shop/collections/${v.product.collection.handle}`);
+          }
+        }
       }
 
       if (p?.handle) {
@@ -177,5 +252,14 @@ export const config: SubscriberConfig = {
     "product-collection.created",
     "product-collection.updated",
     "product-collection.deleted",
+    // Inventory changes affect the storefront's sold-out state. Without
+    // these events, customer purchases that drain stock would leave the
+    // "Add to Cart" button on the page until the 5-minute ISR window
+    // elapses.
+    "inventory-level.created",
+    "inventory-level.updated",
+    "inventory-item.updated",
+    "reservation-item.created",
+    "reservation-item.deleted",
   ],
 };
